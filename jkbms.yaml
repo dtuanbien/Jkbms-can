@@ -1,117 +1,70 @@
-substitutions:
-  name: jkbms-senergy
-  jk_bms_mac: "C8:47:8C:10:79:7A"
-
 esphome:
-  name: ${name}
+  name: jkbms-senergy
 
 esp32:
   board: esp32dev
   framework:
-    type: esp-idf
+    type: arduino
 
 logger:
-  level: INFO
+
+api:
+
+ota:
+  - platform: esphome
+
+web_server:
+  port: 80
 
 wifi:
   ssid: "TUAN BIEN"
   password: "76767676"
+  ap:
+    ssid: "jkbms-senergy"
+    password: "12345678"
 
-ota:
-  platform: esphome
+captive_portal:
 
 esp32_ble_tracker:
-  scan_parameters:
-    active: false
 
 ble_client:
-  - mac_address: ${jk_bms_mac}
+  - mac_address: C8:47:8C:10:79:7A
     id: client0
 
 external_components:
   - source: github://syssi/esphome-jk-bms@main
+    refresh: 0s
 
 jk_bms_ble:
   - ble_client_id: client0
     protocol_version: JK02_32S
-    throttle: 2s
     id: bms0
-
-canbus:
-  - platform: esp32_can
-    id: can_bus
-    can_id: 1
-    tx_pin: GPIO16
-    rx_pin: GPIO17
-    bit_rate: 500kbps
 
 sensor:
   - platform: jk_bms_ble
     jk_bms_ble_id: bms0
     total_voltage:
-      name: "Battery Voltage"
-      id: total_voltage
+      name: "Total Voltage"
     current:
-      name: "Battery Current"
-      id: current
+      name: "Current"
+    power:
+      name: "Power"
     state_of_charge:
-      name: "Battery SoC"
-      id: state_of_charge
-    power_tube_temperature:
-      name: "MOS Temperature"
-      id: mos_temp
+      name: "State of Charge"
+    min_cell_voltage:
+      name: "Min Cell Voltage"
+    max_cell_voltage:
+      name: "Max Cell Voltage"
+    delta_cell_voltage:
+      name: "Delta Cell Voltage"
     temperature_sensor_1:
-      name: "Battery Temp 1"
-      id: temp_1
+      name: "Temperature 1"
+    temperature_sensor_2:
+      name: "Temperature 2"
 
-interval:
-  - interval: 1s
-    then:
-      - lambda: |-
-          if (isnan(id(total_voltage).state) || isnan(id(state_of_charge).state)) return;
-
-          // 1. Khung 0x351: Gioi han sac/xa (28.4V, Sac 70A, Xa 75A, Ngat xa 25.0V)
-          uint16_t charge_v = 284;      // 28.4V * 10
-          int16_t charge_c = 700;       // 70.0A * 10
-          int16_t discharge_c = 750;    // 75.0A * 10
-          uint16_t discharge_v = 250;   // 25.0V * 10
-          std::vector<uint8_t> d351 = {
-            (uint8_t)(charge_v & 0xFF), (uint8_t)(charge_v >> 8),
-            (uint8_t)(charge_c & 0xFF), (uint8_t)(charge_c >> 8),
-            (uint8_t)(discharge_c & 0xFF), (uint8_t)(discharge_c >> 8),
-            (uint8_t)(discharge_v & 0xFF), (uint8_t)(discharge_v >> 8)
-          };
-          id(can_bus).send_data(0x351, false, d351);
-
-          // 2. Khung 0x355: Phan tram pin SoC & SoH
-          uint16_t soc = (uint16_t)id(state_of_charge).state;
-          uint16_t soh = 100;
-          std::vector<uint8_t> d355 = {
-            (uint8_t)(soc & 0xFF), (uint8_t)(soc >> 8),
-            (uint8_t)(soh & 0xFF), (uint8_t)(soh >> 8),
-            0x00, 0x00, 0x00, 0x00
-          };
-          id(can_bus).send_data(0x355, false, d355);
-
-          // 3. Khung 0x356: Dien ap thuc te, Dong dien thuc te, Nhiet do
-          int16_t volt = (int16_t)(id(total_voltage).state * 100);
-          int16_t curr = isnan(id(current).state) ? 0 : (int16_t)(id(current).state * 10);
-          int16_t temp = isnan(id(temp_1).state) ? 250 : (int16_t)(id(temp_1).state * 10);
-          std::vector<uint8_t> d356 = {
-            (uint8_t)(volt & 0xFF), (uint8_t)(volt >> 8),
-            (uint8_t)(curr & 0xFF), (uint8_t)(curr >> 8),
-            (uint8_t)(temp & 0xFF), (uint8_t)(temp >> 8),
-            0x00, 0x00
-          };
-          id(can_bus).send_data(0x356, false, d356);
-
-          // 4. Khung 0x359 & 0x35C: Co bao ve & Cho phep sac/xa
-          std::vector<uint8_t> d359 = {0x00, 0x00, 0x00, 0x00, 0x01, 0x50, 0x4E, 0x00};
-          id(can_bus).send_data(0x359, false, d359);
-
-          std::vector<uint8_t> d35c = {0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-          id(can_bus).send_data(0x35C, false, d35c);
-
-          // 5. Khung 0x35E: Ten hang PYLON
-          std::vector<uint8_t> d35e = {'P', 'Y', 'L', 'O', 'N', ' ', ' ', ' '};
-          id(can_bus).send_data(0x35E, false, d35e);
+canbus:
+  - platform: esp32_can
+    tx_pin: GPIO5
+    rx_pin: GPIO4
+    can_id: 4
+    bit_rate: 500kbps
