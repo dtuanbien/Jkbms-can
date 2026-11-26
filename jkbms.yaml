@@ -40,8 +40,9 @@ jk_bms_ble:
 canbus:
   - platform: esp32_can
     id: can_bus
-    tx_pin: GPIO4
-    rx_pin: GPIO5
+    tx_pin: GPIO21
+    rx_pin: GPIO22
+    can_id: 0x351
     bit_rate: 500kbps
 
 sensor:
