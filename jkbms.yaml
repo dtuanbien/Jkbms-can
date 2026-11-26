@@ -16,6 +16,14 @@ logger:
 wifi:
   ssid: "TUAN BIEN"
   password: "76767676"
+  ap:
+    ssid: "JKBMS-Setup-Wifi"
+    password: "12345678"
+
+captive_portal:
+
+web_server:
+  port: 80
 
 ota:
   platform: esphome
@@ -45,6 +53,47 @@ canbus:
     can_id: 0x351
     bit_rate: 500kbps
 
+number:
+  - platform: template
+    name: "1. Dien ap sac day (V)"
+    id: set_charge_v
+    min_value: 26.0
+    max_value: 29.2
+    step: 0.1
+    initial_value: 28.4
+    optimistic: true
+    restore_value: true
+
+  - platform: template
+    name: "2. Dien ap ngat xa (V)"
+    id: set_discharge_v
+    min_value: 22.0
+    max_value: 26.5
+    step: 0.1
+    initial_value: 25.0
+    optimistic: true
+    restore_value: true
+
+  - platform: template
+    name: "3. Dong sac toi da (A)"
+    id: set_charge_i
+    min_value: 10
+    max_value: 100
+    step: 5
+    initial_value: 70
+    optimistic: true
+    restore_value: true
+
+  - platform: template
+    name: "4. Dong xa toi da (A)"
+    id: set_discharge_i
+    min_value: 10
+    max_value: 100
+    step: 5
+    initial_value: 75
+    optimistic: true
+    restore_value: true
+
 sensor:
   - platform: jk_bms_ble
     jk_bms_ble_id: bms0
@@ -68,11 +117,10 @@ interval:
   - interval: 1s
     then:
       - lambda: |-
-          // 0x351: Gioi han sac 28.4V (284), sac 70A (700), xa 75A (750), ngat xa 25.0V (250)
-          uint16_t max_chg_v = 284;
-          int16_t max_chg_i = 700;
-          int16_t max_dis_i = 750;
-          uint16_t min_dis_v = 250;
+          uint16_t max_chg_v = (uint16_t)(id(set_charge_v).state * 10);
+          int16_t max_chg_i = (int16_t)(id(set_charge_i).state * 10);
+          int16_t max_dis_i = (int16_t)(id(set_discharge_i).state * 10);
+          uint16_t min_dis_v = (uint16_t)(id(set_discharge_v).state * 10);
           std::vector<uint8_t> d351 = {
             (uint8_t)(max_chg_v & 0xFF), (uint8_t)(max_chg_v >> 8),
             (uint8_t)(max_chg_i & 0xFF), (uint8_t)(max_chg_i >> 8),
@@ -81,7 +129,6 @@ interval:
           };
           id(can_bus).send_data(0x351, false, d351);
 
-          // 0x355: SoC (%) va SoH (100%)
           uint16_t soc = isnan(id(state_of_charge).state) ? 50 : (uint16_t)id(state_of_charge).state;
           uint16_t soh = 100;
           std::vector<uint8_t> d355 = {
@@ -91,7 +138,6 @@ interval:
           };
           id(can_bus).send_data(0x355, false, d355);
 
-          // 0x356: Dien ap (0.01V), Dong dien (0.1A), Nhiet do (0.1C)
           int16_t volt = isnan(id(total_voltage).state) ? 2640 : (int16_t)(id(total_voltage).state * 100);
           int16_t curr = isnan(id(current).state) ? 0 : (int16_t)(id(current).state * 10);
           int16_t temp = isnan(id(temp_1).state) ? 250 : (int16_t)(id(temp_1).state * 10);
@@ -103,12 +149,10 @@ interval:
           };
           id(can_bus).send_data(0x356, false, d356);
 
-          // 0x359 & 0x35C: Co bao ve & Cho phep sac/xa
           std::vector<uint8_t> d359 = {0x00, 0x00, 0x00, 0x00, 0x01, 0x50, 0x4E, 0x00};
           id(can_bus).send_data(0x359, false, d359);
           std::vector<uint8_t> d35c = {0xC0, 0x00};
           id(can_bus).send_data(0x35C, false, d35c);
 
-          // 0x35E: Ten hang PYLON
           std::vector<uint8_t> d35e = {'P', 'Y', 'L', 'O', 'N', ' ', ' ', ' '};
           id(can_bus).send_data(0x35E, false, d35e);
