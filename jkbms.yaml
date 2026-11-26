@@ -16,19 +16,9 @@ logger:
 wifi:
   ssid: "TUAN BIEN"
   password: "76767676"
-  ap:
-    ssid: "JKBMS-Senergy-Fallback"
-    password: "12345678"
-
-captive_portal:
-
-web_server:
-  port: 80
-  version: 2
 
 ota:
-  - platform: esphome
-  - platform: web_server
+  platform: esphome
 
 esp32_ble_tracker:
   scan_parameters:
@@ -40,6 +30,7 @@ ble_client:
 
 external_components:
   - source: github://syssi/esphome-jk-bms@main
+  - source: github://syssi/esphome-jk-bms-can@main
 
 jk_bms_ble:
   - ble_client_id: client0
@@ -50,54 +41,20 @@ jk_bms_ble:
 canbus:
   - platform: esp32_can
     id: can_bus
-    tx_pin: GPIO4
-    rx_pin: GPIO5
+    can_id: 1
+    tx_pin: GPIO16
+    rx_pin: GPIO17
     bit_rate: 500kbps
 
-number:
-  - platform: template
-    name: "1. Dien ap sac day (V)"
-    id: charge_voltage
-    min_value: 26.0
-    max_value: 29.2
-    step: 0.1
-    initial_value: 28.4
-    optimistic: true
-    restore_value: true
-    unit_of_measurement: "V"
-
-  - platform: template
-    name: "2. Dien ap ngat xa (V)"
-    id: discharge_voltage
-    min_value: 22.0
-    max_value: 26.5
-    step: 0.1
-    initial_value: 25.0
-    optimistic: true
-    restore_value: true
-    unit_of_measurement: "V"
-
-  - platform: template
-    name: "3. Dong sac toi da (A)"
-    id: charge_current_limit
-    min_value: 10
-    max_value: 100
-    step: 1
-    initial_value: 70
-    optimistic: true
-    restore_value: true
-    unit_of_measurement: "A"
-
-  - platform: template
-    name: "4. Dong xa toi da (A)"
-    id: discharge_current_limit
-    min_value: 10
-    max_value: 100
-    step: 1
-    initial_value: 75
-    optimistic: true
-    restore_value: true
-    unit_of_measurement: "A"
+jk_bms_can:
+  - jk_bms_ble_id: bms0
+    canbus_id: can_bus
+    protocol: PYLON
+    update_interval: 1s
+    charge_voltage: 28.4V
+    charge_current_limit: 70A
+    discharge_current_limit: 75A
+    discharge_voltage: 25.0V
 
 sensor:
   - platform: jk_bms_ble
@@ -123,60 +80,3 @@ sensor:
     max_cell_voltage:
       name: "Max Cell Voltage"
       id: max_cell_voltage
-
-interval:
-  - interval: 1s
-    then:
-      - canbus.send:
-          canbus_id: can_bus
-          can_id: 0x351
-          data: !lambda |-
-            uint16_t cv = (uint16_t)(id(charge_voltage).state * 10);
-            uint16_t ccl = (uint16_t)(id(charge_current_limit).state * 10);
-            uint16_t dcl = (uint16_t)(id(discharge_current_limit).state * 10);
-            uint16_t dv = (uint16_t)(id(discharge_voltage).state * 10);
-            return {
-              (uint8_t)(cv & 0xFF), (uint8_t)(cv >> 8),
-              (uint8_t)(ccl & 0xFF), (uint8_t)(ccl >> 8),
-              (uint8_t)(dcl & 0xFF), (uint8_t)(dcl >> 8),
-              (uint8_t)(dv & 0xFF), (uint8_t)(dv >> 8)
-            };
-
-      - canbus.send:
-          canbus_id: can_bus
-          can_id: 0x355
-          data: !lambda |-
-            uint16_t soc = isnan(id(state_of_charge).state) ? 50 : (uint16_t)(id(state_of_charge).state);
-            uint16_t soh = 100;
-            return {
-              (uint8_t)(soc & 0xFF), (uint8_t)(soc >> 8),
-              (uint8_t)(soh & 0xFF), (uint8_t)(soh >> 8)
-            };
-
-      - canbus.send:
-          canbus_id: can_bus
-          can_id: 0x356
-          data: !lambda |-
-            int16_t volt = isnan(id(total_voltage).state) ? 2600 : (int16_t)(id(total_voltage).state * 100);
-            int16_t curr = isnan(id(current).state) ? 0 : (int16_t)(id(current).state * 10);
-            int16_t temp = isnan(id(temp_1).state) ? 250 : (int16_t)(id(temp_1).state * 10);
-            return {
-              (uint8_t)(volt & 0xFF), (uint8_t)(volt >> 8),
-              (uint8_t)(curr & 0xFF), (uint8_t)(curr >> 8),
-              (uint8_t)(temp & 0xFF), (uint8_t)(temp >> 8)
-            };
-
-      - canbus.send:
-          canbus_id: can_bus
-          can_id: 0x359
-          data: [0x00, 0x00, 0x00, 0x00, 0x01, 0x50, 0x4E, 0x00]
-
-      - canbus.send:
-          canbus_id: can_bus
-          can_id: 0x35C
-          data: [0xC0, 0x00]
-
-      - canbus.send:
-          canbus_id: can_bus
-          can_id: 0x35E
-          data: [0x50, 0x59, 0x4C, 0x4F, 0x4E, 0x20, 0x20, 0x20]
