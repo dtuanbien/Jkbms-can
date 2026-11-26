@@ -50,9 +50,9 @@ canbus:
     id: can_bus
     tx_pin: GPIO4
     rx_pin: GPIO5
+    can_id: 0x351
     bit_rate: 500kbps
 
-# 4 thanh trượt chỉnh thông số trực tiếp trên Web
 number:
   - platform: template
     name: "1. Dien ap sac day (V)"
@@ -119,7 +119,6 @@ sensor:
       name: "Max Cell Voltage"
       id: max_cell_voltage
 
-# Tự động đóng gói và bắn tín hiệu CAN Pylontech mỗi 1 giây
 interval:
   - interval: 1s
     then:
@@ -127,7 +126,6 @@ interval:
           if (isnan(id(total_voltage).state) || isnan(id(state_of_charge).state)) {
             return;
           }
-          // 1. Goi 0x351: Gioi han dien ap & dong sac/xa
           uint16_t charge_v = (uint16_t)(id(max_charge_v).state * 10);
           int16_t charge_a = (int16_t)(id(max_charge_a).state * 10);
           int16_t discharge_a = (int16_t)(id(max_discharge_a).state * 10);
@@ -140,7 +138,6 @@ interval:
           };
           id(can_bus)->send_data(0x351, false, data_351);
 
-          // 2. Goi 0x355: SoC (%) & SoH (100%)
           uint16_t soc = (uint16_t)id(state_of_charge).state;
           uint16_t soh = 100;
           std::vector<uint8_t> data_355 = {
@@ -150,7 +147,6 @@ interval:
           };
           id(can_bus)->send_data(0x355, false, data_355);
 
-          // 3. Goi 0x356: Dien ap thuc (0.01V), Dong thuc (0.1A), Nhiet do (0.1C)
           int16_t volt = (int16_t)(id(total_voltage).state * 100);
           int16_t curr = isnan(id(current).state) ? 0 : (int16_t)(id(current).state * 10);
           int16_t temp = isnan(id(temp_1).state) ? 250 : (int16_t)(id(temp_1).state * 10);
@@ -162,13 +158,11 @@ interval:
           };
           id(can_bus)->send_data(0x356, false, data_356);
 
-          // 4. Goi 0x359 & 0x35C: Co bao ve & Cho phep sac/xa (0xC0)
           std::vector<uint8_t> data_359 = {0x00, 0x00, 0x00, 0x00, 0x01, 0x50, 0x4E, 0x00};
           id(can_bus)->send_data(0x359, false, data_359);
 
           std::vector<uint8_t> data_35c = {0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
           id(can_bus)->send_data(0x35C, false, data_35c);
 
-          // 5. Goi 0x35E: Dinh danh hang PYLON
           std::vector<uint8_t> data_35e = {'P', 'Y', 'L', 'O', 'N', ' ', ' ', ' '};
           id(can_bus)->send_data(0x35E, false, data_35e);
