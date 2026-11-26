@@ -30,7 +30,6 @@ ble_client:
 
 external_components:
   - source: github://syssi/esphome-jk-bms@main
-  - source: github://syssi/esphome-jk-bms-can@main
 
 jk_bms_ble:
   - ble_client_id: client0
@@ -44,16 +43,6 @@ canbus:
     tx_pin: GPIO4
     rx_pin: GPIO5
     bit_rate: 500kbps
-
-jk_bms_can:
-  - jk_bms_ble_id: bms0
-    canbus_id: can_bus
-    protocol: PYLON
-    update_interval: 1s
-    charge_voltage: 28.4V
-    charge_current_limit: 70A
-    discharge_current_limit: 75A
-    discharge_voltage: 25.0V
 
 sensor:
   - platform: jk_bms_ble
@@ -73,9 +62,52 @@ sensor:
     temperature_sensor_1:
       name: "Battery Temp 1"
       id: temp_1
-    min_cell_voltage:
-      name: "Min Cell Voltage"
-      id: min_cell_voltage
-    max_cell_voltage:
-      name: "Max Cell Voltage"
-      id: max_cell_voltage
+
+interval:
+  - interval: 1s
+    then:
+      - lambda: |-
+          // 0x351: Gioi han sac 28.4V (284), sac 70A (700), xa 75A (750), ngat xa 25.0V (250)
+          uint16_t max_chg_v = 284;
+          int16_t max_chg_i = 700;
+          int16_t max_dis_i = 750;
+          uint16_t min_dis_v = 250;
+          std::vector<uint8_t> d351 = {
+            (uint8_t)(max_chg_v & 0xFF), (uint8_t)(max_chg_v >> 8),
+            (uint8_t)(max_chg_i & 0xFF), (uint8_t)(max_chg_i >> 8),
+            (uint8_t)(max_dis_i & 0xFF), (uint8_t)(max_dis_i >> 8),
+            (uint8_t)(min_dis_v & 0xFF), (uint8_t)(min_dis_v >> 8)
+          };
+          id(can_bus).send_data(0x351, false, d351);
+
+          // 0x355: SoC (%) va SoH (100%)
+          uint16_t soc = isnan(id(state_of_charge).state) ? 50 : (uint16_t)id(state_of_charge).state;
+          uint16_t soh = 100;
+          std::vector<uint8_t> d355 = {
+            (uint8_t)(soc & 0xFF), (uint8_t)(soc >> 8),
+            (uint8_t)(soh & 0xFF), (uint8_t)(soh >> 8),
+            0x00, 0x00, 0x00, 0x00
+          };
+          id(can_bus).send_data(0x355, false, d355);
+
+          // 0x356: Dien ap (0.01V), Dong dien (0.1A), Nhiet do (0.1C)
+          int16_t volt = isnan(id(total_voltage).state) ? 2640 : (int16_t)(id(total_voltage).state * 100);
+          int16_t curr = isnan(id(current).state) ? 0 : (int16_t)(id(current).state * 10);
+          int16_t temp = isnan(id(temp_1).state) ? 250 : (int16_t)(id(temp_1).state * 10);
+          std::vector<uint8_t> d356 = {
+            (uint8_t)(volt & 0xFF), (uint8_t)(volt >> 8),
+            (uint8_t)(curr & 0xFF), (uint8_t)(curr >> 8),
+            (uint8_t)(temp & 0xFF), (uint8_t)(temp >> 8),
+            0x00, 0x00
+          };
+          id(can_bus).send_data(0x356, false, d356);
+
+          // 0x359 & 0x35C: Co bao ve & Cho phep sac/xa
+          std::vector<uint8_t> d359 = {0x00, 0x00, 0x00, 0x00, 0x01, 0x50, 0x4E, 0x00};
+          id(can_bus).send_data(0x359, false, d359);
+          std::vector<uint8_t> d35c = {0xC0, 0x00};
+          id(can_bus).send_data(0x35C, false, d35c);
+
+          // 0x35E: Ten hang PYLON
+          std::vector<uint8_t> d35e = {'P', 'Y', 'L', 'O', 'N', ' ', ' ', ' '};
+          id(can_bus).send_data(0x35E, false, d35e);
