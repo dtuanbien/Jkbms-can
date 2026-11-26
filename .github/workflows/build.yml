@@ -4,11 +4,15 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: esphome/build-action@v3
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
-          yaml_file: jkbms.yaml
-      - uses: actions/upload-artifact@v4
+          python-version: '3.12'
+      - name: Install ESPHome and Build
+        run: |
+          pip install esphome
+          esphome compile jkbms.yaml
+      - uses: actions/upload-artifact@v6
         with:
           name: firmware-bin
           path: .esphome/build/*/.pioenvs/*/firmware.factory.bin
