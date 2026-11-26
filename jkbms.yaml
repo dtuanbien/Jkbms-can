@@ -14,10 +14,10 @@ logger:
   level: INFO
 
 wifi:
-  ssid: "TUAN BIEN"
-  password: "76767676"
+  ssid: "VUNGO"
+  password: "1234567890"
   ap:
-    ssid: "JKBMS-Setup-Wifi"
+    ssid: "JKBMS-Fallback"
     password: "12345678"
 
 captive_portal:
@@ -38,6 +38,7 @@ ble_client:
 
 external_components:
   - source: github://syssi/esphome-jk-bms@main
+  - source: github://syssi/esphome-jk-bms-can@main
 
 jk_bms_ble:
   - ble_client_id: client0
@@ -48,51 +49,43 @@ jk_bms_ble:
 canbus:
   - platform: esp32_can
     id: can_bus
-    tx_pin: GPIO21
-    rx_pin: GPIO22
-    can_id: 0x351
+    tx_pin: GPIO4
+    rx_pin: GPIO5
     bit_rate: 500kbps
 
+jk_bms_can:
+  - jk_bms_ble_id: bms0
+    canbus_id: can_bus
+    protocol: PYLON
+    update_interval: 1s
+    charge_voltage: 28.4V
+    charge_current_limit: 70A
+    discharge_current_limit: 75A
+    discharge_voltage: 25.0V
+
 number:
-  - platform: template
-    name: "1. Dien ap sac day (V)"
-    id: set_charge_v
-    min_value: 26.0
-    max_value: 29.2
-    step: 0.1
-    initial_value: 28.4
-    optimistic: true
-    restore_value: true
-
-  - platform: template
-    name: "2. Dien ap ngat xa (V)"
-    id: set_discharge_v
-    min_value: 22.0
-    max_value: 26.5
-    step: 0.1
-    initial_value: 25.0
-    optimistic: true
-    restore_value: true
-
-  - platform: template
-    name: "3. Dong sac toi da (A)"
-    id: set_charge_i
-    min_value: 10
-    max_value: 100
-    step: 5
-    initial_value: 70
-    optimistic: true
-    restore_value: true
-
-  - platform: template
-    name: "4. Dong xa toi da (A)"
-    id: set_discharge_i
-    min_value: 10
-    max_value: 100
-    step: 5
-    initial_value: 75
-    optimistic: true
-    restore_value: true
+  - platform: jk_bms_can
+    jk_bms_can_id: can_bus
+    charge_voltage:
+      name: "1. Dien ap sac day (V)"
+      min_value: 26.0
+      max_value: 29.2
+      step: 0.1
+    discharge_voltage:
+      name: "2. Dien ap ngat xa (V)"
+      min_value: 22.0
+      max_value: 26.5
+      step: 0.1
+    charge_current_limit:
+      name: "3. Dong sac toi da (A)"
+      min_value: 10
+      max_value: 100
+      step: 1
+    discharge_current_limit:
+      name: "4. Dong xa toi da (A)"
+      min_value: 10
+      max_value: 100
+      step: 1
 
 sensor:
   - platform: jk_bms_ble
@@ -112,47 +105,9 @@ sensor:
     temperature_sensor_1:
       name: "Battery Temp 1"
       id: temp_1
-
-interval:
-  - interval: 1s
-    then:
-      - lambda: |-
-          uint16_t max_chg_v = (uint16_t)(id(set_charge_v).state * 10);
-          int16_t max_chg_i = (int16_t)(id(set_charge_i).state * 10);
-          int16_t max_dis_i = (int16_t)(id(set_discharge_i).state * 10);
-          uint16_t min_dis_v = (uint16_t)(id(set_discharge_v).state * 10);
-          std::vector<uint8_t> d351 = {
-            (uint8_t)(max_chg_v & 0xFF), (uint8_t)(max_chg_v >> 8),
-            (uint8_t)(max_chg_i & 0xFF), (uint8_t)(max_chg_i >> 8),
-            (uint8_t)(max_dis_i & 0xFF), (uint8_t)(max_dis_i >> 8),
-            (uint8_t)(min_dis_v & 0xFF), (uint8_t)(min_dis_v >> 8)
-          };
-          id(can_bus).send_data(0x351, false, d351);
-
-          uint16_t soc = isnan(id(state_of_charge).state) ? 50 : (uint16_t)id(state_of_charge).state;
-          uint16_t soh = 100;
-          std::vector<uint8_t> d355 = {
-            (uint8_t)(soc & 0xFF), (uint8_t)(soc >> 8),
-            (uint8_t)(soh & 0xFF), (uint8_t)(soh >> 8),
-            0x00, 0x00, 0x00, 0x00
-          };
-          id(can_bus).send_data(0x355, false, d355);
-
-          int16_t volt = isnan(id(total_voltage).state) ? 2640 : (int16_t)(id(total_voltage).state * 100);
-          int16_t curr = isnan(id(current).state) ? 0 : (int16_t)(id(current).state * 10);
-          int16_t temp = isnan(id(temp_1).state) ? 250 : (int16_t)(id(temp_1).state * 10);
-          std::vector<uint8_t> d356 = {
-            (uint8_t)(volt & 0xFF), (uint8_t)(volt >> 8),
-            (uint8_t)(curr & 0xFF), (uint8_t)(curr >> 8),
-            (uint8_t)(temp & 0xFF), (uint8_t)(temp >> 8),
-            0x00, 0x00
-          };
-          id(can_bus).send_data(0x356, false, d356);
-
-          std::vector<uint8_t> d359 = {0x00, 0x00, 0x00, 0x00, 0x01, 0x50, 0x4E, 0x00};
-          id(can_bus).send_data(0x359, false, d359);
-          std::vector<uint8_t> d35c = {0xC0, 0x00};
-          id(can_bus).send_data(0x35C, false, d35c);
-
-          std::vector<uint8_t> d35e = {'P', 'Y', 'L', 'O', 'N', ' ', ' ', ' '};
-          id(can_bus).send_data(0x35E, false, d35e);
+    min_cell_voltage:
+      name: "Min Cell Voltage"
+      id: min_cell_voltage
+    max_cell_voltage:
+      name: "Max Cell Voltage"
+      id: max_cell_voltage
