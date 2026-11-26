@@ -38,7 +38,6 @@ ble_client:
 
 external_components:
   - source: github://syssi/esphome-jk-bms@main
-  - source: github://Uksa007/esphome-jk-bms-can@main
 
 jk_bms_ble:
   - ble_client_id: client0
@@ -53,15 +52,47 @@ canbus:
     rx_pin: GPIO5
     bit_rate: 500kbps
 
-jk_bms_can:
-  - jk_bms_ble_id: bms0
-    canbus_id: can_bus
-    protocol: PYLON
-    update_interval: 1s
-    charge_voltage: 28.4V
-    charge_current_limit: 70A
-    discharge_current_limit: 75A
-    discharge_voltage: 25.0V
+# 4 thanh trượt chỉnh thông số trực tiếp trên Web
+number:
+  - platform: template
+    name: "1. Dien ap sac day (V)"
+    id: max_charge_v
+    optimistic: true
+    min_value: 26.0
+    max_value: 29.2
+    step: 0.1
+    initial_value: 28.4
+    restore_value: true
+
+  - platform: template
+    name: "2. Dien ap ngat xa (V)"
+    id: min_discharge_v
+    optimistic: true
+    min_value: 22.0
+    max_value: 26.5
+    step: 0.1
+    initial_value: 25.0
+    restore_value: true
+
+  - platform: template
+    name: "3. Dong sac toi da (A)"
+    id: max_charge_a
+    optimistic: true
+    min_value: 10
+    max_value: 100
+    step: 1
+    initial_value: 70
+    restore_value: true
+
+  - platform: template
+    name: "4. Dong xa toi da (A)"
+    id: max_discharge_a
+    optimistic: true
+    min_value: 10
+    max_value: 100
+    step: 1
+    initial_value: 75
+    restore_value: true
 
 sensor:
   - platform: jk_bms_ble
@@ -87,3 +118,57 @@ sensor:
     max_cell_voltage:
       name: "Max Cell Voltage"
       id: max_cell_voltage
+
+# Tự động đóng gói và bắn tín hiệu CAN Pylontech mỗi 1 giây
+interval:
+  - interval: 1s
+    then:
+      - lambda: |-
+          if (isnan(id(total_voltage).state) || isnan(id(state_of_charge).state)) {
+            return;
+          }
+          // 1. Goi 0x351: Gioi han dien ap & dong sac/xa
+          uint16_t charge_v = (uint16_t)(id(max_charge_v).state * 10);
+          int16_t charge_a = (int16_t)(id(max_charge_a).state * 10);
+          int16_t discharge_a = (int16_t)(id(max_discharge_a).state * 10);
+          uint16_t discharge_v = (uint16_t)(id(min_discharge_v).state * 10);
+          std::vector<uint8_t> data_351 = {
+            (uint8_t)(charge_v & 0xFF), (uint8_t)(charge_v >> 8),
+            (uint8_t)(charge_a & 0xFF), (uint8_t)(charge_a >> 8),
+            (uint8_t)(discharge_a & 0xFF), (uint8_t)(discharge_a >> 8),
+            (uint8_t)(discharge_v & 0xFF), (uint8_t)(discharge_v >> 8)
+          };
+          id(can_bus)->send_data(0x351, false, data_351);
+
+          // 2. Goi 0x355: SoC (%) & SoH (100%)
+          uint16_t soc = (uint16_t)id(state_of_charge).state;
+          uint16_t soh = 100;
+          std::vector<uint8_t> data_355 = {
+            (uint8_t)(soc & 0xFF), (uint8_t)(soc >> 8),
+            (uint8_t)(soh & 0xFF), (uint8_t)(soh >> 8),
+            0x00, 0x00, 0x00, 0x00
+          };
+          id(can_bus)->send_data(0x355, false, data_355);
+
+          // 3. Goi 0x356: Dien ap thuc (0.01V), Dong thuc (0.1A), Nhiet do (0.1C)
+          int16_t volt = (int16_t)(id(total_voltage).state * 100);
+          int16_t curr = isnan(id(current).state) ? 0 : (int16_t)(id(current).state * 10);
+          int16_t temp = isnan(id(temp_1).state) ? 250 : (int16_t)(id(temp_1).state * 10);
+          std::vector<uint8_t> data_356 = {
+            (uint8_t)(volt & 0xFF), (uint8_t)(volt >> 8),
+            (uint8_t)(curr & 0xFF), (uint8_t)(curr >> 8),
+            (uint8_t)(temp & 0xFF), (uint8_t)(temp >> 8),
+            0x00, 0x00
+          };
+          id(can_bus)->send_data(0x356, false, data_356);
+
+          // 4. Goi 0x359 & 0x35C: Co bao ve & Cho phep sac/xa (0xC0)
+          std::vector<uint8_t> data_359 = {0x00, 0x00, 0x00, 0x00, 0x01, 0x50, 0x4E, 0x00};
+          id(can_bus)->send_data(0x359, false, data_359);
+
+          std::vector<uint8_t> data_35c = {0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+          id(can_bus)->send_data(0x35C, false, data_35c);
+
+          // 5. Goi 0x35E: Dinh danh hang PYLON
+          std::vector<uint8_t> data_35e = {'P', 'Y', 'L', 'O', 'N', ' ', ' ', ' '};
+          id(can_bus)->send_data(0x35E, false, data_35e);
