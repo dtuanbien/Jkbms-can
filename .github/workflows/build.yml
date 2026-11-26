@@ -12,7 +12,8 @@ jobs:
         run: |
           pip install esphome
           esphome compile jkbms.yaml
+          find .esphome -name "firmware.factory.bin" -exec cp {} ./firmware.factory.bin \;
       - uses: actions/upload-artifact@v4
         with:
           name: firmware-bin
-          path: "**/firmware.factory.bin"
+          path: firmware.factory.bin
