@@ -16,12 +16,21 @@ logger:
 wifi:
   ssid: "TUAN BIEN"
   password: "76767676"
+  # Phát Wi-Fi dự phòng để luôn truy cập được web nếu mất mạng nhà
+  ap:
+    ssid: "JKBMS-Senergy-Fallback"
+    password: "12345678"
 
+captive_portal:
+
+# Bật giao diện web nội bộ (truy cập tại http://jkbms-senergy.local)
 web_server:
   port: 80
+  version: 2
+  ota: true
 
 ota:
-  platform: esphome
+  - platform: esphome
 
 esp32_ble_tracker:
   scan_parameters:
@@ -53,10 +62,56 @@ jk_bms_can:
     canbus_id: can_bus
     protocol: PYLON
     update_interval: 1s
-    charge_voltage: 28.4V
-    charge_current_limit: 70A
-    discharge_current_limit: 75A
-    discharge_voltage: 25.0V
+    charge_voltage_id: charge_voltage
+    charge_current_limit_id: charge_current_limit
+    discharge_current_limit_id: discharge_current_limit
+    discharge_voltage_id: discharge_voltage
+
+# 4 thanh trượt điều chỉnh thông số trực tiếp trên trang web
+number:
+  - platform: template
+    name: "1. Dien ap sac day (V)"
+    id: charge_voltage
+    min_value: 26.0
+    max_value: 29.2
+    step: 0.1
+    initial_value: 28.4
+    optimistic: true
+    restore_value: true
+    unit_of_measurement: "V"
+
+  - platform: template
+    name: "2. Dien ap ngat xa (V)"
+    id: discharge_voltage
+    min_value: 22.0
+    max_value: 26.5
+    step: 0.1
+    initial_value: 25.0
+    optimistic: true
+    restore_value: true
+    unit_of_measurement: "V"
+
+  - platform: template
+    name: "3. Dong sac toi da (A)"
+    id: charge_current_limit
+    min_value: 10
+    max_value: 100
+    step: 1
+    initial_value: 70
+    optimistic: true
+    restore_value: true
+    unit_of_measurement: "A"
+
+  - platform: template
+    name: "4. Dong xa toi da (A)"
+    id: discharge_current_limit
+    min_value: 10
+    max_value: 100
+    step: 1
+    initial_value: 75
+    optimistic: true
+    restore_value: true
+    unit_of_measurement: "A"
 
 sensor:
   - platform: jk_bms_ble
