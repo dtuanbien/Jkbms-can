@@ -45,12 +45,15 @@ sensor:
     jk_bms_ble_id: bms0
     total_voltage:
       name: "Total Voltage"
+      id: bms_voltage
     current:
       name: "Current"
+      id: bms_current
     power:
       name: "Power"
     state_of_charge:
       name: "State of Charge"
+      id: bms_soc
     min_cell_voltage:
       name: "Min Cell Voltage"
     max_cell_voltage:
@@ -59,8 +62,67 @@ sensor:
       name: "Delta Cell Voltage"
     temperature_sensor_1:
       name: "Temperature 1"
+      id: bms_temp1
     temperature_sensor_2:
       name: "Temperature 2"
+
+number:
+  - platform: template
+    name: "Ap Sac Toi Da (V)"
+    id: charge_voltage
+    min_value: 24.0
+    max_value: 30.0
+    step: 0.1
+    initial_value: 28.4
+    optimistic: true
+    restore_value: true
+
+  - platform: template
+    name: "Ap Cat Xa (V)"
+    id: discharge_voltage
+    min_value: 20.0
+    max_value: 26.0
+    step: 0.1
+    initial_value: 22.0
+    optimistic: true
+    restore_value: true
+
+  - platform: template
+    name: "Dong Sac Toi Da (A)"
+    id: max_charge_current
+    min_value: 1
+    max_value: 150
+    step: 1
+    initial_value: 50
+    optimistic: true
+    restore_value: true
+
+  - platform: template
+    name: "Dong Xa Toi Da (A)"
+    id: max_discharge_current
+    min_value: 1
+    max_value: 150
+    step: 1
+    initial_value: 80
+    optimistic: true
+    restore_value: true
+
+  - platform: jk_bms_ble
+    jk_bms_ble_id: bms0
+    cell_count:
+      name: "So Cell Pin"
+    total_battery_capacity:
+      name: "Dung Luong Pin (Ah)"
+
+switch:
+  - platform: jk_bms_ble
+    jk_bms_ble_id: bms0
+    charging:
+      name: "Cong Tac Sac BMS"
+    discharging:
+      name: "Cong Tac Xa BMS"
+    balancer:
+      name: "Can Bang Cell"
 
 canbus:
   - platform: esp32_can
@@ -68,3 +130,45 @@ canbus:
     rx_pin: GPIO4
     can_id: 4
     bit_rate: 500kbps
+    id: my_canbus
+
+interval:
+  - interval: 1s
+    then:
+      - lambda: |-
+          uint16_t cv = (uint16_t)(id(charge_voltage).state * 10);
+          uint16_t ccl = (uint16_t)(id(max_charge_current).state * 10);
+          uint16_t dcl = (uint16_t)(id(max_discharge_current).state * 10);
+          uint16_t dv = (uint16_t)(id(discharge_voltage).state * 10);
+          std::vector<uint8_t> data_351 = {
+            (uint8_t)(cv & 0xFF), (uint8_t)((cv >> 8) & 0xFF),
+            (uint8_t)(ccl & 0xFF), (uint8_t)((ccl >> 8) & 0xFF),
+            (uint8_t)(dcl & 0xFF), (uint8_t)((dcl >> 8) & 0xFF),
+            (uint8_t)(dv & 0xFF), (uint8_t)((dv >> 8) & 0xFF)
+          };
+          id(my_canbus).send_data(0x351, false, data_351);
+
+          uint16_t soc = (uint16_t)id(bms_soc).state;
+          if (soc > 100) soc = 100;
+          std::vector<uint8_t> data_355 = {
+            (uint8_t)(soc & 0xFF), (uint8_t)((soc >> 8) & 0xFF),
+            100, 0,
+            (uint8_t)((soc * 100) & 0xFF), (uint8_t)(((soc * 100) >> 8) & 0xFF)
+          };
+          id(my_canbus).send_data(0x355, false, data_355);
+
+          int16_t v = (int16_t)(id(bms_voltage).state * 100);
+          int16_t i = (int16_t)(id(bms_current).state * 10);
+          int16_t t = (int16_t)(id(bms_temp1).state * 10);
+          std::vector<uint8_t> data_356 = {
+            (uint8_t)(v & 0xFF), (uint8_t)((v >> 8) & 0xFF),
+            (uint8_t)(i & 0xFF), (uint8_t)((i >> 8) & 0xFF),
+            (uint8_t)(t & 0xFF), (uint8_t)((t >> 8) & 0xFF)
+          };
+          id(my_canbus).send_data(0x356, false, data_356);
+
+          std::vector<uint8_t> data_359 = {0, 0, 0, 0, 2, 0x50, 0x4E};
+          id(my_canbus).send_data(0x359, false, data_359);
+
+          std::vector<uint8_t> data_35e = {'P', 'Y', 'L', 'O', 'N', ' ', ' ', ' '};
+          id(my_canbus).send_data(0x35E, false, data_35e);
