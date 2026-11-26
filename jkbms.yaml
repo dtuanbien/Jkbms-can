@@ -14,8 +14,8 @@ logger:
   level: INFO
 
 wifi:
-  ssid: "VUNGO"
-  password: "1234567890"
+  ssid: "TUAN BIEN"
+  password: "76767676"
   ap:
     ssid: "JKBMS-Fallback"
     password: "12345678"
