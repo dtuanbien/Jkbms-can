@@ -33,30 +33,12 @@ ble_client:
 
 external_components:
   - source: github://syssi/esphome-jk-bms@main
-  - source: github://syssi/esphome-jk-bms-can@main
 
 jk_bms_ble:
   - ble_client_id: client0
     protocol_version: JK02_32S
     throttle: 2s
     id: bms0
-
-canbus:
-  - platform: esp32_can
-    id: can_bus
-    tx_pin: GPIO4
-    rx_pin: GPIO5
-    bit_rate: 500kbps
-
-jk_bms_can:
-  - jk_bms_ble_id: bms0
-    canbus_id: can_bus
-    protocol: PYLON
-    update_interval: 1s
-    charge_voltage: 28.4V
-    charge_current_limit: 70A
-    discharge_current_limit: 75A
-    discharge_voltage: 25.0V
 
 sensor:
   - platform: jk_bms_ble
@@ -82,3 +64,59 @@ sensor:
     max_cell_voltage:
       name: "Max Cell Voltage"
       id: max_cell_voltage
+
+canbus:
+  - platform: esp32_can
+    id: can_bus
+    tx_pin: GPIO4
+    rx_pin: GPIO5
+    bit_rate: 500kbps
+
+interval:
+  - interval: 1s
+    then:
+      - lambda: |-
+          // 1. Khung 0x351: Gioi han sac/xa (28.4V, Sac 70A, Xa 75A, Ngat xa 25.0V)
+          uint16_t max_charge_v = 284;      // 28.4V * 10
+          int16_t max_charge_a = 700;       // 70.0A * 10
+          int16_t max_discharge_a = 750;    // 75.0A * 10
+          uint16_t min_discharge_v = 250;   // 25.0V * 10
+          std::vector<uint8_t> d351 = {
+            (uint8_t)(max_charge_v & 0xFF), (uint8_t)(max_charge_v >> 8),
+            (uint8_t)(max_charge_a & 0xFF), (uint8_t)(max_charge_a >> 8),
+            (uint8_t)(max_discharge_a & 0xFF), (uint8_t)(max_discharge_a >> 8),
+            (uint8_t)(min_discharge_v & 0xFF), (uint8_t)(min_discharge_v >> 8)
+          };
+          id(can_bus)->send_data(0x351, false, d351);
+
+          // 2. Khung 0x355: Phan tram pin SoC & SoH
+          uint16_t soc = isnan(id(state_of_charge).state) ? 50 : (uint16_t)id(state_of_charge).state;
+          uint16_t soh = 100;
+          std::vector<uint8_t> d355 = {
+            (uint8_t)(soc & 0xFF), (uint8_t)(soc >> 8),
+            (uint8_t)(soh & 0xFF), (uint8_t)(soh >> 8),
+            0x00, 0x00, 0x00, 0x00
+          };
+          id(can_bus)->send_data(0x355, false, d355);
+
+          // 3. Khung 0x356: Dien ap thuc te, Dong dien thuc te, Nhiet do
+          int16_t volt = isnan(id(total_voltage).state) ? 2640 : (int16_t)(id(total_voltage).state * 100);
+          int16_t curr = isnan(id(current).state) ? 0 : (int16_t)(id(current).state * 10);
+          int16_t temp = isnan(id(temp_1).state) ? 250 : (int16_t)(id(temp_1).state * 10);
+          std::vector<uint8_t> d356 = {
+            (uint8_t)(volt & 0xFF), (uint8_t)(volt >> 8),
+            (uint8_t)(curr & 0xFF), (uint8_t)(curr >> 8),
+            (uint8_t)(temp & 0xFF), (uint8_t)(temp >> 8),
+            0x00, 0x00
+          };
+          id(can_bus)->send_data(0x356, false, d356);
+
+          // 4. Khung 0x359 & 0x35C: Co bao ve va cho phep sac/xa Pylontech
+          std::vector<uint8_t> d359 = {0x00, 0x00, 0x00, 0x00, 0x01, 0x50, 0x4E, 0x00};
+          id(can_bus)->send_data(0x359, false, d359);
+          std::vector<uint8_t> d35C = {0xC0, 0x00}; // Bit 7 & 6 = 1: Cho phep sac va xa
+          id(can_bus)->send_data(0x35C, false, d35C);
+
+          // 5. Khung 0x35E: Ten hang PYLON
+          std::vector<uint8_t> d35E = {'P', 'Y', 'L', 'O', 'N', ' ', ' ', ' '};
+          id(can_bus)->send_data(0x35E, false, d35E);
