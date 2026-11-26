@@ -23,11 +23,14 @@ ota:
 
 web_server:
   port: 80
+  version: 2
 
 external_components:
   - source: github://syssi/esphome-jk-bms@main
 
 esp32_ble_tracker:
+  scan_parameters:
+    active: false
 
 ble_client:
   - mac_address: "C8:47:8C:10:79:7A"
@@ -36,7 +39,7 @@ ble_client:
 jk_bms_ble:
   - ble_client_id: client0
     protocol_version: JK02_24S
-    throttle: 2s
+    throttle: 3s
 
 button:
   - platform: factory_reset
@@ -52,6 +55,7 @@ number:
     initial_value: 28.4
     optimistic: true
     restore_value: true
+    mode: box
     unit_of_measurement: "V"
 
   - platform: template
@@ -63,6 +67,7 @@ number:
     initial_value: 25.2
     optimistic: true
     restore_value: true
+    mode: box
     unit_of_measurement: "V"
 
   - platform: template
@@ -74,6 +79,7 @@ number:
     initial_value: 60
     optimistic: true
     restore_value: true
+    mode: box
     unit_of_measurement: "A"
 
   - platform: template
@@ -85,6 +91,7 @@ number:
     initial_value: 75
     optimistic: true
     restore_value: true
+    mode: box
     unit_of_measurement: "A"
 
   - platform: template
@@ -96,6 +103,7 @@ number:
     initial_value: 280
     optimistic: true
     restore_value: true
+    mode: box
     unit_of_measurement: "Ah"
 
 sensor:
