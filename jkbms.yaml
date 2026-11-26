@@ -16,14 +16,12 @@ logger:
 wifi:
   ssid: "TUAN BIEN"
   password: "76767676"
-  # Phát Wi-Fi dự phòng để luôn truy cập được web nếu mất mạng nhà
   ap:
     ssid: "JKBMS-Senergy-Fallback"
     password: "12345678"
 
 captive_portal:
 
-# Bật giao diện web nội bộ (truy cập tại http://jkbms-senergy.local)
 web_server:
   port: 80
   version: 2
@@ -40,9 +38,9 @@ ble_client:
   - mac_address: ${jk_bms_mac}
     id: client0
 
+# Chỉ dùng thư viện gốc duy nhất của syssi (đang hoạt động ổn định)
 external_components:
   - source: github://syssi/esphome-jk-bms@main
-  - source: github://syssi/esphome-jk-bms-can@main
 
 jk_bms_ble:
   - ble_client_id: client0
@@ -50,22 +48,13 @@ jk_bms_ble:
     throttle: 2s
     id: bms0
 
+# Cấu hình CANBUS chuẩn Pylontech (500kbps)
 canbus:
   - platform: esp32_can
     id: can_bus
     tx_pin: GPIO4
     rx_pin: GPIO5
     bit_rate: 500kbps
-
-jk_bms_can:
-  - jk_bms_ble_id: bms0
-    canbus_id: can_bus
-    protocol: PYLON
-    update_interval: 1s
-    charge_voltage_id: charge_voltage
-    charge_current_limit_id: charge_current_limit
-    discharge_current_limit_id: discharge_current_limit
-    discharge_voltage_id: discharge_voltage
 
 # 4 thanh trượt điều chỉnh thông số trực tiếp trên trang web
 number:
@@ -137,3 +126,67 @@ sensor:
     max_cell_voltage:
       name: "Max Cell Voltage"
       id: max_cell_voltage
+
+# Tự động gửi gói tin chuẩn Pylontech CAN sang biến tần Senergy mỗi 1 giây
+interval:
+  - interval: 1s
+    then:
+      # 0x351: Giới hạn áp sạc, dòng sạc, dòng xả, áp ngắt xả
+      - canbus.send:
+          canbus_id: can_bus
+          can_id: 0x351
+          data: !lambda |-
+            uint16_t cv = (uint16_t)(id(charge_voltage).state * 10);
+            uint16_t ccl = (uint16_t)(id(charge_current_limit).state * 10);
+            uint16_t dcl = (uint16_t)(id(discharge_current_limit).state * 10);
+            uint16_t dv = (uint16_t)(id(discharge_voltage).state * 10);
+            return {
+              (uint8_t)(cv & 0xFF), (uint8_t)(cv >> 8),
+              (uint8_t)(ccl & 0xFF), (uint8_t)(ccl >> 8),
+              (uint8_t)(dcl & 0xFF), (uint8_t)(dcl >> 8),
+              (uint8_t)(dv & 0xFF), (uint8_t)(dv >> 8)
+            };
+
+      # 0x355: Phần trăm pin (SoC %) và Sức khỏe pin (SoH 100%)
+      - canbus.send:
+          canbus_id: can_bus
+          can_id: 0x355
+          data: !lambda |-
+            uint16_t soc = isnan(id(state_of_charge).state) ? 50 : (uint16_t)(id(state_of_charge).state);
+            uint16_t soh = 100;
+            return {
+              (uint8_t)(soc & 0xFF), (uint8_t)(soc >> 8),
+              (uint8_t)(soh & 0xFF), (uint8_t)(soh >> 8)
+            };
+
+      # 0x356: Điện áp thực tế (V), Dòng điện thực tế (A), Nhiệt độ pin (°C)
+      - canbus.send:
+          canbus_id: can_bus
+          can_id: 0x356
+          data: !lambda |-
+            int16_t volt = isnan(id(total_voltage).state) ? 2600 : (int16_t)(id(total_voltage).state * 100);
+            int16_t curr = isnan(id(current).state) ? 0 : (int16_t)(id(current).state * 10);
+            int16_t temp = isnan(id(temp_1).state) ? 250 : (int16_t)(id(temp_1).state * 10);
+            return {
+              (uint8_t)(volt & 0xFF), (uint8_t)(volt >> 8),
+              (uint8_t)(curr & 0xFF), (uint8_t)(curr >> 8),
+              (uint8_t)(temp & 0xFF), (uint8_t)(temp >> 8)
+            };
+
+      # 0x359: Trạng thái bảo vệ / Cảnh báo (0 = Bình thường)
+      - canbus.send:
+          canbus_id: can_bus
+          can_id: 0x359
+          data: [0x00, 0x00, 0x00, 0x00, 0x01, 0x50, 0x4E, 0x00]
+
+      # 0x35C: Cờ cho phép sạc và xả (0xC0 = Cho phép cả sạc và xả)
+      - canbus.send:
+          canbus_id: can_bus
+          can_id: 0x35C
+          data: [0xC0, 0x00]
+
+      # 0x35E: Tên hãng pin "PYLON"
+      - canbus.send:
+          canbus_id: can_bus
+          can_id: 0x35E
+          data: [0x50, 0x59, 0x4C, 0x4F, 0x4E, 0x20, 0x20, 0x20]
