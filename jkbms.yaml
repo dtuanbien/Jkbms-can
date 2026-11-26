@@ -40,35 +40,97 @@ jk_bms_ble:
     protocol_version: JK02_32S
     id: bms0
 
+uart:
+  - id: mod_bus
+    tx_pin: GPIO17
+    rx_pin: GPIO16
+    baud_rate: 9600
+
+modbus:
+  id: senergy_modbus
+  uart_id: mod_bus
+
+modbus_controller:
+  - id: senergy_inverter
+    address: 0x01
+    modbus_id: senergy_modbus
+    setup_priority: -10
+    update_interval: 5s
+
 sensor:
+  # --- THÔNG SỐ PIN JK BMS ---
   - platform: jk_bms_ble
     jk_bms_ble_id: bms0
     total_voltage:
-      name: "Total Voltage"
+      name: "Pin - Total Voltage"
       id: bms_voltage
     current:
-      name: "Current"
+      name: "Pin - Current"
       id: bms_current
     power:
-      name: "Power"
+      name: "Pin - Power"
     state_of_charge:
-      name: "State of Charge"
+      name: "Pin - State of Charge"
       id: bms_soc
     min_cell_voltage:
-      name: "Min Cell Voltage"
+      name: "Pin - Min Cell Voltage"
     max_cell_voltage:
-      name: "Max Cell Voltage"
+      name: "Pin - Max Cell Voltage"
     delta_cell_voltage:
-      name: "Delta Cell Voltage"
+      name: "Pin - Delta Cell Voltage"
     temperature_sensor_1:
-      name: "Temperature 1"
+      name: "Pin - Temperature 1"
       id: bms_temp1
     temperature_sensor_2:
-      name: "Temperature 2"
+      name: "Pin - Temperature 2"
+
+  # --- THÔNG SỐ BIẾN TẦN SENERGY (RS485) ---
+  - platform: modbus_controller
+    modbus_controller_id: senergy_inverter
+    name: "Senergy - Cong Suat PV1 (W)"
+    register_type: read
+    address: 0x1004
+    unit_of_measurement: "W"
+    value_type: U_WORD
+
+  - platform: modbus_controller
+    modbus_controller_id: senergy_inverter
+    name: "Senergy - Cong Suat PV2 (W)"
+    register_type: read
+    address: 0x1005
+    unit_of_measurement: "W"
+    value_type: U_WORD
+
+  - platform: modbus_controller
+    modbus_controller_id: senergy_inverter
+    name: "Senergy - Dien Ap Luoi (V)"
+    register_type: read
+    address: 0x1008
+    unit_of_measurement: "V"
+    value_type: U_WORD
+    filters:
+      - multiply: 0.1
+
+  - platform: modbus_controller
+    modbus_controller_id: senergy_inverter
+    name: "Senergy - Cong Suat Tai (W)"
+    register_type: read
+    address: 0x1010
+    unit_of_measurement: "W"
+    value_type: S_WORD
+
+  - platform: modbus_controller
+    modbus_controller_id: senergy_inverter
+    name: "Senergy - Cong Suat Luoi (W)"
+    register_type: read
+    address: 0x1012
+    unit_of_measurement: "W"
+    value_type: S_WORD
 
 number:
+  # --- CHỈNH ÁP & DÒNG SẠC XẢ GỬI QUA CAN PYLONTECH ---
   - platform: template
-    name: "Ap Sac Toi Da (V)"
+    name: "CAN - Ap Sac Toi Da (V)"
     id: charge_voltage
     min_value: 24.0
     max_value: 30.0
@@ -78,7 +140,7 @@ number:
     restore_value: true
 
   - platform: template
-    name: "Ap Cat Xa (V)"
+    name: "CAN - Ap Cat Xa (V)"
     id: discharge_voltage
     min_value: 20.0
     max_value: 26.0
@@ -88,7 +150,7 @@ number:
     restore_value: true
 
   - platform: template
-    name: "Dong Sac Toi Da (A)"
+    name: "CAN - Dong Sac Toi Da (A)"
     id: max_charge_current
     min_value: 1
     max_value: 150
@@ -98,7 +160,7 @@ number:
     restore_value: true
 
   - platform: template
-    name: "Dong Xa Toi Da (A)"
+    name: "CAN - Dong Xa Toi Da (A)"
     id: max_discharge_current
     min_value: 1
     max_value: 150
@@ -107,22 +169,50 @@ number:
     optimistic: true
     restore_value: true
 
+  # --- CÀI ĐẶT TRỰC TIẾP TRÊN BIẾN TẦN SENERGY (RS485) ---
+  - platform: modbus_controller
+    modbus_controller_id: senergy_inverter
+    name: "Senergy - Gioi Han Dong Sac (A)"
+    address: 0x2002
+    value_type: U_WORD
+    min_value: 0
+    max_value: 120
+    step: 1
+    multiply: 10
+
+  - platform: modbus_controller
+    modbus_controller_id: senergy_inverter
+    name: "Senergy - SOC Cat Xa Toi Thieu (%)"
+    address: 0x2005
+    value_type: U_WORD
+    min_value: 5
+    max_value: 90
+    step: 1
+
+  # --- CÀI ĐẶT TRÊN MẠCH JK BMS ---
   - platform: jk_bms_ble
     jk_bms_ble_id: bms0
     cell_count:
-      name: "So Cell Pin"
+      name: "Pin - So Cell"
     total_battery_capacity:
-      name: "Dung Luong Pin (Ah)"
+      name: "Pin - Dung Luong (Ah)"
 
 switch:
   - platform: jk_bms_ble
     jk_bms_ble_id: bms0
     charging:
-      name: "Cong Tac Sac BMS"
+      name: "Pin - Cong Tac Sac BMS"
     discharging:
-      name: "Cong Tac Xa BMS"
+      name: "Pin - Cong Tac Xa BMS"
     balancer:
-      name: "Can Bang Cell"
+      name: "Pin - Can Bang Cell"
+
+  - platform: modbus_controller
+    modbus_controller_id: senergy_inverter
+    name: "Senergy - Cho Phep Day Luoi"
+    register_type: holding
+    address: 0x2000
+    bitmask: 1
 
 canbus:
   - platform: esp32_can
