@@ -100,10 +100,10 @@ number:
 
 sensor:
   - platform: jk_bms_ble
-    battery_voltage:
+    total_voltage:
       name: "Battery Voltage"
       id: bms_voltage
-    battery_current:
+    current:
       name: "Battery Current"
       id: bms_current
     state_of_charge:
