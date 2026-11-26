@@ -42,7 +42,7 @@ external_components:
 
 jk_bms_ble:
   - ble_client_id: client0
-    protocol_version: JK02_32S
+    protocol_version: JK02_24S
     throttle: 2s
     id: bms0
 
