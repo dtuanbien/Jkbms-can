@@ -1,114 +1,178 @@
-substitutions:
-  name: jkbms-senergy
-  jk_bms_mac: "C8:47:8C:10:79:7A"
-
 esphome:
-  name: ${name}
+  name: jkbms-senergy
 
 esp32:
   board: esp32dev
   framework:
-    type: esp-idf
-
-logger:
-  level: INFO
+    type: arduino
 
 wifi:
   ssid: "TUAN BIEN"
   password: "76767676"
   ap:
-    ssid: "JK-BMS-Config"
-    password: "12345678"
+    ssid: "JKBMS-Senergy-Fallback"
 
 captive_portal:
 
+logger:
+  baud_rate: 0
+
+api:
 ota:
   - platform: esphome
-  - platform: web_server
 
 web_server:
   port: 80
 
-esp32_ble_tracker:
-  scan_parameters:
-    active: false
-
-ble_client:
-  - mac_address: ${jk_bms_mac}
-    id: client0
-
 external_components:
   - source: github://syssi/esphome-jk-bms@main
+
+esp32_ble_tracker:
+
+ble_client:
+  - mac_address: "C8:47:8C:10:79:7A"
+    id: client0
 
 jk_bms_ble:
   - ble_client_id: client0
     protocol_version: JK02_24S
     throttle: 2s
-    id: bms0
+
+button:
+  - platform: factory_reset
+    name: "Doi Wi-Fi (Reset mang)"
+
+number:
+  - platform: template
+    name: "Max Charge Voltage (V)"
+    id: max_charge_v
+    min_value: 24.0
+    max_value: 60.0
+    step: 0.1
+    initial_value: 28.4
+    optimistic: true
+    restore_value: true
+    unit_of_measurement: "V"
+
+  - platform: template
+    name: "Min Discharge Voltage (V)"
+    id: min_discharge_v
+    min_value: 20.0
+    max_value: 52.0
+    step: 0.1
+    initial_value: 25.2
+    optimistic: true
+    restore_value: true
+    unit_of_measurement: "V"
+
+  - platform: template
+    name: "Max Charge Current (A)"
+    id: max_charge_a
+    min_value: 1
+    max_value: 200
+    step: 1
+    initial_value: 60
+    optimistic: true
+    restore_value: true
+    unit_of_measurement: "A"
+
+  - platform: template
+    name: "Max Discharge Current (A)"
+    id: max_discharge_a
+    min_value: 1
+    max_value: 200
+    step: 1
+    initial_value: 75
+    optimistic: true
+    restore_value: true
+    unit_of_measurement: "A"
+
+  - platform: template
+    name: "Battery Capacity (Ah)"
+    id: battery_ah
+    min_value: 10
+    max_value: 1000
+    step: 5
+    initial_value: 280
+    optimistic: true
+    restore_value: true
+    unit_of_measurement: "Ah"
 
 sensor:
   - platform: jk_bms_ble
-    jk_bms_ble_id: bms0
-    total_voltage:
+    battery_voltage:
       name: "Battery Voltage"
-      id: total_voltage
-    current:
+      id: bms_voltage
+    battery_current:
       name: "Battery Current"
-      id: current
+      id: bms_current
     state_of_charge:
       name: "Battery SoC"
-      id: state_of_charge
-    power_tube_temperature:
-      name: "MOS Temperature"
-      id: mos_temp
+      id: bms_soc
     temperature_sensor_1:
       name: "Battery Temp 1"
-      id: temp_1
+      id: bms_temp
+    power_tube_temperature:
+      name: "MOS Temperature"
     min_cell_voltage:
       name: "Min Cell Voltage"
-      id: min_cell_voltage
     max_cell_voltage:
       name: "Max Cell Voltage"
-      id: max_cell_voltage
 
 canbus:
   - platform: esp32_can
-    id: can_bus
-    tx_pin: GPIO4
-    rx_pin: GPIO5
-    can_id: 0x351
+    id: my_canbus
+    tx_pin: GPIO22
+    rx_pin: GPIO21
+    can_id: 0x305
     bit_rate: 500kbps
 
 interval:
   - interval: 1s
     then:
       - canbus.send:
-          canbus_id: can_bus
+          canbus_id: my_canbus
           can_id: 0x351
-          data: [0x1C, 0x01, 0xBC, 0x02, 0xEE, 0x02, 0xFA, 0x00]
+          data: !lambda |-
+            uint16_t cvl = (uint16_t)(id(max_charge_v).state * 10.0);
+            uint16_t ccl = (uint16_t)(id(max_charge_a).state * 10.0);
+            uint16_t dcl = (uint16_t)(id(max_discharge_a).state * 10.0);
+            uint16_t dvl = (uint16_t)(id(min_discharge_v).state * 10.0);
+            return {
+              (uint8_t)(cvl & 0xFF), (uint8_t)(cvl >> 8),
+              (uint8_t)(ccl & 0xFF), (uint8_t)(ccl >> 8),
+              (uint8_t)(dcl & 0xFF), (uint8_t)(dcl >> 8),
+              (uint8_t)(dvl & 0xFF), (uint8_t)(dvl >> 8)
+            };
       - canbus.send:
-          canbus_id: can_bus
+          canbus_id: my_canbus
           can_id: 0x355
           data: !lambda |-
-            uint16_t soc = isnan(id(state_of_charge).state) ? 50 : (uint16_t)id(state_of_charge).state;
-            return {(uint8_t)(soc & 0xFF), (uint8_t)(soc >> 8), 0x64, 0x00, 0x00, 0x00, 0x00, 0x00};
+            uint16_t soc = (uint16_t)id(bms_soc).state;
+            uint16_t soh = 100;
+            return {
+              (uint8_t)(soc & 0xFF), (uint8_t)(soc >> 8),
+              (uint8_t)(soh & 0xFF), (uint8_t)(soh >> 8),
+              0x00, 0x00, 0x00, 0x00
+            };
       - canbus.send:
-          canbus_id: can_bus
+          canbus_id: my_canbus
           can_id: 0x356
           data: !lambda |-
-            int16_t v = isnan(id(total_voltage).state) ? 2640 : (int16_t)(id(total_voltage).state * 100);
-            int16_t c = isnan(id(current).state) ? 0 : (int16_t)(id(current).state * 10);
-            int16_t t = isnan(id(temp_1).state) ? 250 : (int16_t)(id(temp_1).state * 10);
-            return {(uint8_t)(v & 0xFF), (uint8_t)(v >> 8), (uint8_t)(c & 0xFF), (uint8_t)(c >> 8), (uint8_t)(t & 0xFF), (uint8_t)(t >> 8), 0x00, 0x00};
+            int16_t volt = (int16_t)(id(bms_voltage).state * 100.0);
+            int16_t curr = (int16_t)(id(bms_current).state * 10.0);
+            int16_t temp = (int16_t)(id(bms_temp).state * 10.0);
+            return {
+              (uint8_t)(volt & 0xFF), (uint8_t)(volt >> 8),
+              (uint8_t)(curr & 0xFF), (uint8_t)(curr >> 8),
+              (uint8_t)(temp & 0xFF), (uint8_t)(temp >> 8),
+              0x00, 0x00
+            };
       - canbus.send:
-          canbus_id: can_bus
+          canbus_id: my_canbus
           can_id: 0x359
           data: [0x00, 0x00, 0x00, 0x00, 0x01, 0x50, 0x4E, 0x00]
       - canbus.send:
-          canbus_id: can_bus
-          can_id: 0x35C
-          data: [0xC0, 0x00]
-      - canbus.send:
-          canbus_id: can_bus
+          canbus_id: my_canbus
           can_id: 0x35E
           data: [0x50, 0x59, 0x4C, 0x4F, 0x4E, 0x20, 0x20, 0x20]
