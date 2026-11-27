@@ -16,10 +16,11 @@ logger:
 wifi:
   ssid: "TUAN BIEN"
   password: "76767676"
+  power_save_mode: LIGHT
   reboot_timeout: 0s
   manual_ip:
-    static_ip: 192.168.1.200
-    gateway: 192.168.1.1
+    static_ip: 192.168.10.200
+    gateway: 192.168.10.1
     subnet: 255.255.255.0
     dns1: 8.8.8.8
     dns2: 1.1.1.1
@@ -31,18 +32,21 @@ captive_portal:
 
 web_server:
   port: 80
-  version: 3
+  version: 2
 
 http_request:
   useragent: esphome/device
-  timeout: 5s
+  timeout: 2s
   verify_ssl: false
 
 ota:
   platform: esphome
 
+# Tối ưu quét và giữ kết nối Bluetooth BLE ổn định, không bị rớt
 esp32_ble_tracker:
   scan_parameters:
+    interval: 1100ms
+    window: 1100ms
     active: false
 
 ble_client:
@@ -55,9 +59,10 @@ external_components:
 jk_bms_ble:
   - ble_client_id: client0
     protocol_version: JK02_32S
-    throttle: 3s
+    throttle: 5s
     id: bms0
 
+# Giao tiếp CAN sang biến tần Senergy (SN65HVD230)
 canbus:
   - platform: esp32_can
     id: can_bus
@@ -66,6 +71,7 @@ canbus:
     rx_pin: GPIO5
     bit_rate: 500kbps
 
+# Giao tiếp RS485 đọc dữ liệu PV / Load / Grid từ Senergy (MAX485)
 uart:
   id: mod_bus_uart
   tx_pin: GPIO17
@@ -82,6 +88,7 @@ modbus_controller:
     modbus_id: senergy_modbus
     update_interval: 5s
 
+# Nút nhấn vật lý bật/tắt BMS (GPIO25)
 binary_sensor:
   - platform: gpio
     pin:
@@ -102,6 +109,7 @@ binary_sensor:
               - switch.turn_on: bms_charge_sw
               - switch.turn_on: bms_discharge_sw
 
+# Các thông số cài đặt giới hạn CAN và Senergy
 number:
   - platform: template
     name: "CAN Charge Voltage"
@@ -155,6 +163,7 @@ number:
     step: 10
     unit_of_measurement: "W"
 
+# Công tắc điều khiển BMS và Bám tải Senergy
 switch:
   - platform: jk_bms_ble
     jk_bms_ble_id: bms0
@@ -169,6 +178,7 @@ switch:
     register_type: holding
     bitmask: 1
 
+# Cảm biến từ JK BMS và Biến tần Senergy
 sensor:
   - platform: jk_bms_ble
     jk_bms_ble_id: bms0
@@ -213,6 +223,7 @@ sensor:
     filters: [{ multiply: 0.1 }]
     unit_of_measurement: "V"
 
+# Gửi bản tin CAN Pylontech và đồng bộ Blynk qua Internet
 interval:
   - interval: 1s
     then:
@@ -253,7 +264,7 @@ interval:
           data: !lambda |-
             return {0x50, 0x59, 0x4C, 0x4F, 0x4E, 0x20, 0x20, 0x20};
 
-  - interval: 5s
+  - interval: 10s
     then:
       - if:
           condition: wifi.connected
@@ -271,16 +282,6 @@ interval:
                   u += "&V9=" + str_sprintf("%.1f", isnan(id(temp_1).state) ? 0.0f : id(temp_1).state);
                   u += "&V10=" + str_sprintf("%.3f", isnan(id(delta_cell_v).state) ? 0.0f : id(delta_cell_v).state);
                   u += "&V19=" + str_sprintf("%.1f", isnan(id(rem_capacity).state) ? 0.0f : id(rem_capacity).state);
-                  return u;
-
-  - interval: 8s
-    then:
-      - if:
-          condition: wifi.connected
-          then:
-            - http_request.get:
-                url: !lambda |-
-                  std::string u = "http://blynk.cloud";
                   u += "&V11=" + str_sprintf("%.3f", isnan(id(cell_1).state) ? 0.0f : id(cell_1).state);
                   u += "&V12=" + str_sprintf("%.3f", isnan(id(cell_2).state) ? 0.0f : id(cell_2).state);
                   u += "&V13=" + str_sprintf("%.3f", isnan(id(cell_3).state) ? 0.0f : id(cell_3).state);
@@ -290,15 +291,3 @@ interval:
                   u += "&V17=" + str_sprintf("%.3f", isnan(id(cell_7).state) ? 0.0f : id(cell_7).state);
                   u += "&V18=" + str_sprintf("%.3f", isnan(id(cell_8).state) ? 0.0f : id(cell_8).state);
                   return u;
-
-  - interval: 6s
-    then:
-      - if:
-          condition: wifi.connected
-          then:
-            - http_request.get:
-                url: "http://blynk.cloud"
-                capture_response: true
-                on_response:
-                  then:
-                    - lambda: |-
