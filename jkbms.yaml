@@ -157,6 +157,7 @@ interval:
                   u += "&V16=" + str_sprintf("%.3f", isnan(id(cell_6).state) ? 0.0f : id(cell_6).state);
                   u += "&V17=" + str_sprintf("%.3f", isnan(id(cell_7).state) ? 0.0f : id(cell_7).state);
                   u += "&V18=" + str_sprintf("%.3f", isnan(id(cell_8).state) ? 0.0f : id(cell_8).state);
+                  return u;
   - interval: 6s
     then:
       - if:
@@ -279,4 +280,3 @@ number:
   - { platform: template, name: "CAN - Dong Sac Toi Da (A)", id: can_charge_i, optimistic: true, min_value: 0, max_value: 100, step: 1, initial_value: 60, restore_value: true }
   - { platform: template, name: "CAN - Dong Xa Toi Da (A)", id: can_discharge_i, optimistic: true, min_value: 0, max_value: 150, step: 1, initial_value: 75, restore_value: true }
   - { platform: modbus_controller, modbus_controller_id: senergy_inv, name: "Senergy - Cong Suat Day Luoi (W)", id: senergy_export_limit, address: 0x2015, register_type: holding, value_type: U_WORD, min_value: 0, max_value: 4000, step: 50, unit_of_measurement: "W" }
-     return u;
