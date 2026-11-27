@@ -54,7 +54,6 @@ jk_bms_ble:
     throttle: 3s
     id: bms0
 
-# Module 1: Giao tiếp CAN (SN65HVD230) sang Senergy 4kW
 canbus:
   - platform: esp32_can
     id: can_bus
@@ -63,7 +62,6 @@ canbus:
     rx_pin: GPIO5
     bit_rate: 500kbps
 
-# Module 2 & 3: Giao tiếp RS485 Modbus với Senergy 4kW
 uart:
   id: mod_bus_uart
   tx_pin: GPIO17
@@ -81,7 +79,6 @@ modbus_controller:
     update_interval: 5s
     command_throttle: 100ms
 
-# Nút nhấn cơ bật/tắt BMS (GPIO25)
 binary_sensor:
   - platform: gpio
     pin:
@@ -102,7 +99,6 @@ binary_sensor:
               - switch.turn_on: bms_charge_sw
               - switch.turn_on: bms_discharge_sw
 
-# Các thanh chỉnh thông số CAN và Công suất đẩy lưới
 number:
   - platform: template
     name: "CAN Charge Voltage"
@@ -156,7 +152,6 @@ number:
     step: 10
     unit_of_measurement: "W"
 
-# Công tắc điều khiển BMS và Đẩy lưới
 switch:
   - platform: jk_bms_ble
     jk_bms_ble_id: bms0
@@ -171,7 +166,6 @@ switch:
     register_type: holding
     bitmask: 1
 
-# Cảm biến đầy đủ: Pin Lưu Trữ (8 cell + Công suất) + PV1/PV2 + Lưới + Tải
 sensor:
   - platform: jk_bms_ble
     jk_bms_ble_id: bms0
@@ -251,7 +245,6 @@ sensor:
     value_type: S_WORD
     unit_of_measurement: "W"
 
-# Gửi CAN sang Senergy và đồng bộ toàn bộ lên App Blynk (4G/Wi-Fi ngoài)
 interval:
   - interval: 1s
     then:
@@ -297,6 +290,8 @@ interval:
             - http_request.get:
                 url: !lambda |-
                   std::string u = "http://blynk.cloud";
+                  u += "/external/api/batch/update?token=";
+                  u += "YApwHwb_atq5PAiQzC-0qHsb74EPLW6e";
                   u += "&V0=" + str_sprintf("%d", (int)(isnan(id(state_of_charge).state) ? 0 : id(state_of_charge).state));
                   u += "&V1=" + str_sprintf("%.2f", isnan(id(total_voltage).state) ? 0.0f : id(total_voltage).state);
                   u += "&V2=" + str_sprintf("%.1f", isnan(id(current).state) ? 0.0f : id(current).state);
@@ -311,3 +306,12 @@ interval:
                   u += "&V21=" + str_sprintf("%.1f", isnan(id(pv1_voltage).state) ? 0.0f : id(pv1_voltage).state);
                   u += "&V26=" + str_sprintf("%.1f", isnan(id(pv2_voltage).state) ? 0.0f : id(pv2_voltage).state);
                   u += "&V27=" + str_sprintf("%d", (int)(isnan(id(pv2_power).state) ? 0 : id(pv2_power).state));
+                  u += "&V28=" + str_sprintf("%d", (int)(isnan(id(grid_power).state) ? 0 : id(grid_power).state));
+                  return u;
+
+  - interval: 8s
+    then:
+      - if:
+          condition: wifi.connected
+          then:
+            - http_request.get:
