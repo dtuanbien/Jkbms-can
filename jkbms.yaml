@@ -41,7 +41,6 @@ ble_client:
   - mac_address: ${jk_bms_mac}
     id: client0
 
-# Chỉ tải duy nhất kho gốc syssi/esphome-jk-bms đang hoạt động ổn định
 external_components:
   - source: github://syssi/esphome-jk-bms@main
 
@@ -51,24 +50,23 @@ jk_bms_ble:
     throttle: 2s
     id: bms0
 
-# Cấu hình cổng CAN 500kbps nối với SN65HVD230
 canbus:
   - platform: esp32_can
     id: can_bus
+    can_id: 0x351
     tx_pin: GPIO4
     rx_pin: GPIO5
     bit_rate: 500kbps
 
-# Tự động gửi gói tin chuẩn Pylontech CAN sang biến tần Senergy mỗi 1 giây
 interval:
   - interval: 1s
     then:
       - lambda: |-
           // 1. Gói 0x351: Giới hạn sạc/xả (28.4V | Sạc 70A | Xả 75A | Cắt xả 25.0V)
-          uint16_t charge_v = 284;      // 28.4V * 10
-          int16_t charge_a = 700;       // 70.0A * 10
-          int16_t discharge_a = 750;    // 75.0A * 10
-          uint16_t discharge_v = 250;   // 25.0V * 10
+          uint16_t charge_v = 284;
+          int16_t charge_a = 700;
+          int16_t discharge_a = 750;
+          uint16_t discharge_v = 250;
           std::vector<uint8_t> data_351 = {
             (uint8_t)(charge_v & 0xFF), (uint8_t)(charge_v >> 8),
             (uint8_t)(charge_a & 0xFF), (uint8_t)(charge_a >> 8),
@@ -99,7 +97,7 @@ interval:
           };
           id(can_bus).send_data(0x356, false, data_356);
 
-          // 4. Gói 0x359 & 0x35C: Cho phép sạc/xả (Charge & Discharge Enable)
+          // 4. Gói 0x359 & 0x35C: Cho phép sạc/xả
           std::vector<uint8_t> data_359 = {0x00, 0x00, 0x00, 0x00, 0x01, 0x50, 0x4E, 0x00};
           id(can_bus).send_data(0x359, false, data_359);
 
