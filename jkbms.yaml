@@ -24,24 +24,20 @@ wifi:
 
 captive_portal:
 
-# Giữ giao diện Web mượt như bản trước (có sẵn OTA và chế độ Sáng/Tối)
 web_server:
   port: 80
   version: 3
 
+http_request:
+  useragent: esphome/device
+  timeout: 3s
+  verify_ssl: false
+
 ota:
   platform: esphome
 
-# Chỉ thêm đúng phần gửi dữ liệu ra Blynk để xem từ xa qua 4G
-http_request:
-  useragent: esphome/device
-  timeout: 2s
-  verify_ssl: false
-
 esp32_ble_tracker:
   scan_parameters:
-    interval: 1100ms
-    window: 1100ms
     active: false
 
 ble_client:
@@ -57,7 +53,6 @@ jk_bms_ble:
     throttle: 3s
     id: bms0
 
-# Giao tiếp CAN Pylontech sang biến tần Senergy 4kW
 canbus:
   - platform: esp32_can
     id: can_bus
@@ -66,7 +61,22 @@ canbus:
     rx_pin: GPIO5
     bit_rate: 500kbps
 
-# Nút nhấn vật lý bật/tắt BMS (GPIO25)
+uart:
+  id: mod_bus_uart
+  tx_pin: GPIO17
+  rx_pin: GPIO16
+  baud_rate: 9600
+
+modbus:
+  id: senergy_modbus
+  uart_id: mod_bus_uart
+
+modbus_controller:
+  - id: senergy
+    address: 0x01
+    modbus_id: senergy_modbus
+    update_interval: 5s
+
 binary_sensor:
   - platform: gpio
     pin:
@@ -87,7 +97,6 @@ binary_sensor:
               - switch.turn_on: bms_charge_sw
               - switch.turn_on: bms_discharge_sw
 
-# Các thanh chỉnh thông số CAN
 number:
   - platform: template
     name: "CAN Charge Voltage"
@@ -129,22 +138,37 @@ number:
     initial_value: 75
     restore_value: true
     unit_of_measurement: "A"
+  - platform: modbus_controller
+    modbus_controller_id: senergy
+    name: "Senergy Export Power Limit"
+    id: senergy_export_limit
+    address: 0x0108
+    register_type: holding
+    value_type: U_WORD
+    min_value: 0
+    max_value: 4000
+    step: 10
+    unit_of_measurement: "W"
 
-# Công tắc điều khiển BMS
 switch:
   - platform: jk_bms_ble
     jk_bms_ble_id: bms0
     charging: { name: "BMS Charging Switch", id: bms_charge_sw }
     discharging: { name: "BMS Discharging Switch", id: bms_discharge_sw }
     balancer: { name: "BMS Balancer Switch", id: bms_balance_sw }
+  - platform: modbus_controller
+    modbus_controller_id: senergy
+    name: "Senergy Export Enable"
+    id: senergy_export_sw
+    address: 0x0107
+    register_type: holding
+    bitmask: 1
 
-# Cảm biến đọc từ JK BMS (đầy đủ 8 cell)
 sensor:
   - platform: jk_bms_ble
     jk_bms_ble_id: bms0
     total_voltage: { name: "Battery Voltage", id: total_voltage }
     current: { name: "Battery Current", id: current }
-    power: { name: "Battery Power", id: power }
     state_of_charge: { name: "Battery SoC", id: state_of_charge }
     capacity_remaining: { name: "Remaining Capacity", id: rem_capacity }
     power_tube_temperature: { name: "MOS Temperature", id: mos_temp }
@@ -158,8 +182,32 @@ sensor:
     cell_voltage_6: { name: "Cell 6", id: cell_6 }
     cell_voltage_7: { name: "Cell 7", id: cell_7 }
     cell_voltage_8: { name: "Cell 8", id: cell_8 }
+  - platform: modbus_controller
+    modbus_controller_id: senergy
+    name: "PV1 Power"
+    id: pv1_power
+    address: 0x000A
+    register_type: read
+    value_type: U_WORD
+    unit_of_measurement: "W"
+  - platform: modbus_controller
+    modbus_controller_id: senergy
+    name: "Load Power"
+    id: load_power
+    address: 0x001E
+    register_type: read
+    value_type: U_WORD
+    unit_of_measurement: "W"
+  - platform: modbus_controller
+    modbus_controller_id: senergy
+    name: "Grid Voltage"
+    id: grid_voltage
+    address: 0x0012
+    register_type: read
+    value_type: U_WORD
+    filters: [{ multiply: 0.1 }]
+    unit_of_measurement: "V"
 
-# Gửi bản tin CAN sang Senergy và đẩy dữ liệu lên Blynk để xem qua 4G
 interval:
   - interval: 1s
     then:
@@ -190,17 +238,14 @@ interval:
           canbus_id: can_bus
           can_id: 0x35C
           data: !lambda |-
-            uint8_t flags = 0;
-            if (id(bms_charge_sw).state) flags |= 0x80;
-            if (id(bms_discharge_sw).state) flags |= 0x40;
-            return {flags, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+            return {0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
       - canbus.send:
           canbus_id: can_bus
           can_id: 0x35E
           data: !lambda |-
             return {0x50, 0x59, 0x4C, 0x4F, 0x4E, 0x20, 0x20, 0x20};
 
-  - interval: 10s
+  - interval: 5s
     then:
       - if:
           condition: wifi.connected
@@ -211,10 +256,23 @@ interval:
                   u += "&V0=" + to_string((int)(isnan(id(state_of_charge).state) ? 0 : id(state_of_charge).state));
                   u += "&V1=" + str_sprintf("%.2f", isnan(id(total_voltage).state) ? 0.0f : id(total_voltage).state);
                   u += "&V2=" + str_sprintf("%.1f", isnan(id(current).state) ? 0.0f : id(current).state);
+                  u += "&V3=" + to_string((int)(isnan(id(pv1_power).state) ? 0 : id(pv1_power).state));
+                  u += "&V4=" + to_string((int)(isnan(id(load_power).state) ? 0 : id(load_power).state));
+                  u += "&V7=" + str_sprintf("%.1f", isnan(id(grid_voltage).state) ? 0.0f : id(grid_voltage).state);
                   u += "&V8=" + str_sprintf("%.1f", isnan(id(mos_temp).state) ? 0.0f : id(mos_temp).state);
                   u += "&V9=" + str_sprintf("%.1f", isnan(id(temp_1).state) ? 0.0f : id(temp_1).state);
                   u += "&V10=" + str_sprintf("%.3f", isnan(id(delta_cell_v).state) ? 0.0f : id(delta_cell_v).state);
                   u += "&V19=" + str_sprintf("%.1f", isnan(id(rem_capacity).state) ? 0.0f : id(rem_capacity).state);
+                  return u;
+
+  - interval: 8s
+    then:
+      - if:
+          condition: wifi.connected
+          then:
+            - http_request.get:
+                url: !lambda |-
+                  std::string u = "http://blynk.cloud{blynk_token}";
                   u += "&V11=" + str_sprintf("%.3f", isnan(id(cell_1).state) ? 0.0f : id(cell_1).state);
                   u += "&V12=" + str_sprintf("%.3f", isnan(id(cell_2).state) ? 0.0f : id(cell_2).state);
                   u += "&V13=" + str_sprintf("%.3f", isnan(id(cell_3).state) ? 0.0f : id(cell_3).state);
@@ -224,3 +282,21 @@ interval:
                   u += "&V17=" + str_sprintf("%.3f", isnan(id(cell_7).state) ? 0.0f : id(cell_7).state);
                   u += "&V18=" + str_sprintf("%.3f", isnan(id(cell_8).state) ? 0.0f : id(cell_8).state);
                   return u;
+
+  - interval: 6s
+    then:
+      - if:
+          condition: wifi.connected
+          then:
+            - http_request.get:
+                url: "http://blynk.cloud{blynk_token}&V6"
+                capture_response: true
+                on_response:
+                  then:
+                    - lambda: |-
+                        if (response->status_code == 200) {
+                          float val = atof(body.c_str());
+                          if (val >= 0 && val <= 4000 && val != id(senergy_export_limit).state) {
+                            auto call = id(senergy_export_limit).make_call(); call.set_value(val); call.perform();
+                          }
+                        }
