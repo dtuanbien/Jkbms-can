@@ -155,7 +155,7 @@ sensor:
     state_of_charge:
       name: "Pin - State of Charge"
       id: state_of_charge
-    power_tube_temperature:
+    mosfet_temperature:
       name: "Pin - Nhiet Do MOS"
     temperature_sensor_1:
       name: "Pin - Temperature 1"
@@ -254,7 +254,7 @@ switch:
 number:
   - platform: jk_bms_ble
     jk_bms_ble_id: bms0
-    battery_capacity:
+    total_battery_capacity:
       name: "Pin - Dung Luong (Ah)"
     cell_count:
       name: "Pin - So Cell"
