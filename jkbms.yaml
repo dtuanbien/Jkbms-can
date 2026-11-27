@@ -1,7 +1,7 @@
 substitutions:
   name: jkbms-senergy
   jk_bms_mac: "C8:47:8C:10:79:7A"
-  mqtt_broker: "broker.emqx.io" # Dùng sẵn broker công cộng miễn phí (hoặc đổi sang IP nội bộ của bạn)
+  mqtt_broker: "broker.emqx.io"
 
 esphome:
   name: ${name}
@@ -21,16 +21,14 @@ wifi:
     ssid: "JKBMS-Fallback"
     password: "12345678"
 
-# 1. Giao diện Web xem trực tiếp không cần mạng Internet
 web_server:
   port: 80
   version: 1
 
-# 2. Kết nối MQTT xem trên App điện thoại
 mqtt:
   broker: ${mqtt_broker}
   port: 1883
-  topic_prefix: jkbms_tuanbien_9988 # Đổi số đuôi này thành số bí mật của riêng bạn để tránh trùng người khác
+  topic_prefix: jkbms_tuanbien_9988
 
 ota:
   platform: esphome
@@ -43,9 +41,9 @@ ble_client:
   - mac_address: ${jk_bms_mac}
     id: client0
 
+# Chỉ tải duy nhất kho gốc syssi/esphome-jk-bms đang hoạt động ổn định
 external_components:
   - source: github://syssi/esphome-jk-bms@main
-  - source: github://syssi/esphome-jk-bms-can@main
 
 jk_bms_ble:
   - ble_client_id: client0
@@ -53,6 +51,7 @@ jk_bms_ble:
     throttle: 2s
     id: bms0
 
+# Cấu hình cổng CAN 500kbps nối với SN65HVD230
 canbus:
   - platform: esp32_can
     id: can_bus
@@ -60,15 +59,56 @@ canbus:
     rx_pin: GPIO5
     bit_rate: 500kbps
 
-jk_bms_can:
-  - jk_bms_ble_id: bms0
-    canbus_id: can_bus
-    protocol: PYLON
-    update_interval: 1s
-    charge_voltage: 28.4V
-    charge_current_limit: 70A
-    discharge_current_limit: 75A
-    discharge_voltage: 25.0V
+# Tự động gửi gói tin chuẩn Pylontech CAN sang biến tần Senergy mỗi 1 giây
+interval:
+  - interval: 1s
+    then:
+      - lambda: |-
+          // 1. Gói 0x351: Giới hạn sạc/xả (28.4V | Sạc 70A | Xả 75A | Cắt xả 25.0V)
+          uint16_t charge_v = 284;      // 28.4V * 10
+          int16_t charge_a = 700;       // 70.0A * 10
+          int16_t discharge_a = 750;    // 75.0A * 10
+          uint16_t discharge_v = 250;   // 25.0V * 10
+          std::vector<uint8_t> data_351 = {
+            (uint8_t)(charge_v & 0xFF), (uint8_t)(charge_v >> 8),
+            (uint8_t)(charge_a & 0xFF), (uint8_t)(charge_a >> 8),
+            (uint8_t)(discharge_a & 0xFF), (uint8_t)(discharge_a >> 8),
+            (uint8_t)(discharge_v & 0xFF), (uint8_t)(discharge_v >> 8)
+          };
+          id(can_bus).send_data(0x351, false, data_351);
+
+          // 2. Gói 0x355: Phần trăm pin (SoC) và Sức khỏe pin (SoH = 100%)
+          uint16_t soc = isnan(id(state_of_charge).state) ? 50 : (uint16_t)id(state_of_charge).state;
+          uint16_t soh = 100;
+          std::vector<uint8_t> data_355 = {
+            (uint8_t)(soc & 0xFF), (uint8_t)(soc >> 8),
+            (uint8_t)(soh & 0xFF), (uint8_t)(soh >> 8),
+            0x00, 0x00, 0x00, 0x00
+          };
+          id(can_bus).send_data(0x355, false, data_355);
+
+          // 3. Gói 0x356: Điện áp thực, Dòng thực, Nhiệt độ thực
+          int16_t volt = isnan(id(total_voltage).state) ? 2640 : (int16_t)(id(total_voltage).state * 100);
+          int16_t curr = isnan(id(current).state) ? 0 : (int16_t)(id(current).state * 10);
+          int16_t temp = isnan(id(mos_temp).state) ? 250 : (int16_t)(id(mos_temp).state * 10);
+          std::vector<uint8_t> data_356 = {
+            (uint8_t)(volt & 0xFF), (uint8_t)(volt >> 8),
+            (uint8_t)(curr & 0xFF), (uint8_t)(curr >> 8),
+            (uint8_t)(temp & 0xFF), (uint8_t)(temp >> 8),
+            0x00, 0x00
+          };
+          id(can_bus).send_data(0x356, false, data_356);
+
+          // 4. Gói 0x359 & 0x35C: Cho phép sạc/xả (Charge & Discharge Enable)
+          std::vector<uint8_t> data_359 = {0x00, 0x00, 0x00, 0x00, 0x01, 0x50, 0x4E, 0x00};
+          id(can_bus).send_data(0x359, false, data_359);
+
+          std::vector<uint8_t> data_35c = {0xC0, 0x00};
+          id(can_bus).send_data(0x35C, false, data_35c);
+
+          // 5. Gói 0x35E: Tên định danh PYLON
+          std::vector<uint8_t> data_35e = {'P', 'Y', 'L', 'O', 'N', ' ', ' ', ' '};
+          id(can_bus).send_data(0x35E, false, data_35e);
 
 sensor:
   - platform: jk_bms_ble
