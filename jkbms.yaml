@@ -34,7 +34,7 @@ ota:
   platform: esphome
 
 # ==========================================
-# 1. BLUETOOTH JK BMS (CHỈ DÙNG 1 THƯ VIỆN CHUẨN)
+# 1. BLUETOOTH JK BMS
 # ==========================================
 esp32_ble_tracker:
   scan_parameters:
@@ -59,6 +59,7 @@ jk_bms_ble:
 canbus:
   - platform: esp32_can
     id: can_bus
+    can_id: 4
     tx_pin: GPIO4
     rx_pin: GPIO5
     bit_rate: 500kbps
