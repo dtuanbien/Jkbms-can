@@ -37,6 +37,8 @@ ota:
 
 esp32_ble_tracker:
   scan_parameters:
+    interval: 1100ms
+    window: 1100ms
     active: false
 
 ble_client:
@@ -52,6 +54,7 @@ jk_bms_ble:
     throttle: 3s
     id: bms0
 
+# Module 1: Giao tiếp CAN (SN65HVD230) sang Senergy 4kW
 canbus:
   - platform: esp32_can
     id: can_bus
@@ -60,6 +63,7 @@ canbus:
     rx_pin: GPIO5
     bit_rate: 500kbps
 
+# Module 2 & 3: Giao tiếp RS485 Modbus với Senergy 4kW
 uart:
   id: mod_bus_uart
   tx_pin: GPIO17
@@ -75,7 +79,9 @@ modbus_controller:
     address: 0x01
     modbus_id: senergy_modbus
     update_interval: 5s
+    command_throttle: 100ms
 
+# Nút nhấn cơ bật/tắt BMS (GPIO25)
 binary_sensor:
   - platform: gpio
     pin:
@@ -96,6 +102,7 @@ binary_sensor:
               - switch.turn_on: bms_charge_sw
               - switch.turn_on: bms_discharge_sw
 
+# Các thanh chỉnh thông số CAN và Công suất đẩy lưới
 number:
   - platform: template
     name: "CAN Charge Voltage"
@@ -149,6 +156,7 @@ number:
     step: 10
     unit_of_measurement: "W"
 
+# Công tắc điều khiển BMS và Đẩy lưới
 switch:
   - platform: jk_bms_ble
     jk_bms_ble_id: bms0
@@ -163,11 +171,13 @@ switch:
     register_type: holding
     bitmask: 1
 
+# Cảm biến đầy đủ: Pin Lưu Trữ (8 cell + Công suất) + PV1/PV2 + Lưới + Tải
 sensor:
   - platform: jk_bms_ble
     jk_bms_ble_id: bms0
     total_voltage: { name: "Battery Voltage", id: total_voltage }
     current: { name: "Battery Current", id: current }
+    power: { name: "Battery Power", id: bat_power }
     state_of_charge: { name: "Battery SoC", id: state_of_charge }
     capacity_remaining: { name: "Remaining Capacity", id: rem_capacity }
     power_tube_temperature: { name: "MOS Temperature", id: mos_temp }
@@ -183,9 +193,35 @@ sensor:
     cell_voltage_8: { name: "Cell 8", id: cell_8 }
   - platform: modbus_controller
     modbus_controller_id: senergy
+    name: "PV1 Voltage"
+    id: pv1_voltage
+    address: 0x0008
+    register_type: read
+    value_type: U_WORD
+    filters: [{ multiply: 0.1 }]
+    unit_of_measurement: "V"
+  - platform: modbus_controller
+    modbus_controller_id: senergy
     name: "PV1 Power"
     id: pv1_power
     address: 0x000A
+    register_type: read
+    value_type: U_WORD
+    unit_of_measurement: "W"
+  - platform: modbus_controller
+    modbus_controller_id: senergy
+    name: "PV2 Voltage"
+    id: pv2_voltage
+    address: 0x000B
+    register_type: read
+    value_type: U_WORD
+    filters: [{ multiply: 0.1 }]
+    unit_of_measurement: "V"
+  - platform: modbus_controller
+    modbus_controller_id: senergy
+    name: "PV2 Power"
+    id: pv2_power
+    address: 0x000D
     register_type: read
     value_type: U_WORD
     unit_of_measurement: "W"
@@ -206,7 +242,16 @@ sensor:
     value_type: U_WORD
     filters: [{ multiply: 0.1 }]
     unit_of_measurement: "V"
+  - platform: modbus_controller
+    modbus_controller_id: senergy
+    name: "Grid Power"
+    id: grid_power
+    address: 0x0015
+    register_type: read
+    value_type: S_WORD
+    unit_of_measurement: "W"
 
+# Gửi CAN sang Senergy và đồng bộ toàn bộ lên App Blynk (4G/Wi-Fi ngoài)
 interval:
   - interval: 1s
     then:
@@ -252,49 +297,17 @@ interval:
             - http_request.get:
                 url: !lambda |-
                   std::string u = "http://blynk.cloud";
-                  u += "&V0=" + to_string((int)(isnan(id(state_of_charge).state) ? 0 : id(state_of_charge).state));
+                  u += "&V0=" + str_sprintf("%d", (int)(isnan(id(state_of_charge).state) ? 0 : id(state_of_charge).state));
                   u += "&V1=" + str_sprintf("%.2f", isnan(id(total_voltage).state) ? 0.0f : id(total_voltage).state);
                   u += "&V2=" + str_sprintf("%.1f", isnan(id(current).state) ? 0.0f : id(current).state);
-                  u += "&V3=" + to_string((int)(isnan(id(pv1_power).state) ? 0 : id(pv1_power).state));
-                  u += "&V4=" + to_string((int)(isnan(id(load_power).state) ? 0 : id(load_power).state));
+                  u += "&V3=" + str_sprintf("%d", (int)(isnan(id(pv1_power).state) ? 0 : id(pv1_power).state));
+                  u += "&V4=" + str_sprintf("%d", (int)(isnan(id(load_power).state) ? 0 : id(load_power).state));
                   u += "&V7=" + str_sprintf("%.1f", isnan(id(grid_voltage).state) ? 0.0f : id(grid_voltage).state);
                   u += "&V8=" + str_sprintf("%.1f", isnan(id(mos_temp).state) ? 0.0f : id(mos_temp).state);
                   u += "&V9=" + str_sprintf("%.1f", isnan(id(temp_1).state) ? 0.0f : id(temp_1).state);
                   u += "&V10=" + str_sprintf("%.3f", isnan(id(delta_cell_v).state) ? 0.0f : id(delta_cell_v).state);
                   u += "&V19=" + str_sprintf("%.1f", isnan(id(rem_capacity).state) ? 0.0f : id(rem_capacity).state);
-                  return u;
-
-  - interval: 8s
-    then:
-      - if:
-          condition: wifi.connected
-          then:
-            - http_request.get:
-                url: !lambda |-
-                  std::string u = "http://blynk.cloud";
-                  u += "&V11=" + str_sprintf("%.3f", isnan(id(cell_1).state) ? 0.0f : id(cell_1).state);
-                  u += "&V12=" + str_sprintf("%.3f", isnan(id(cell_2).state) ? 0.0f : id(cell_2).state);
-                  u += "&V13=" + str_sprintf("%.3f", isnan(id(cell_3).state) ? 0.0f : id(cell_3).state);
-                  u += "&V14=" + str_sprintf("%.3f", isnan(id(cell_4).state) ? 0.0f : id(cell_4).state);
-                  u += "&V15=" + str_sprintf("%.3f", isnan(id(cell_5).state) ? 0.0f : id(cell_5).state);
-                  u += "&V16=" + str_sprintf("%.3f", isnan(id(cell_6).state) ? 0.0f : id(cell_6).state);
-                  u += "&V17=" + str_sprintf("%.3f", isnan(id(cell_7).state) ? 0.0f : id(cell_7).state);
-                  u += "&V18=" + str_sprintf("%.3f", isnan(id(cell_8).state) ? 0.0f : id(cell_8).state);
-                  return u;
-
-  - interval: 6s
-    then:
-      - if:
-          condition: wifi.connected
-          then:
-            - http_request.get:
-                url: "http://blynk.cloud"
-                capture_response: true
-                on_response:
-                  then:
-                    - lambda: |-
-                        if (response->status_code == 200) {
-                          float val = atof(body.c_str());
-                          if (val >= 0 && val <= 4000 && val != id(senergy_export_limit).state) {
-                            auto call = id(senergy_export_limit).make_call(); call.set_value(val); call.perform();
-                          }
+                  u += "&V20=" + str_sprintf("%d", (int)(isnan(id(bat_power).state) ? 0 : id(bat_power).state));
+                  u += "&V21=" + str_sprintf("%.1f", isnan(id(pv1_voltage).state) ? 0.0f : id(pv1_voltage).state);
+                  u += "&V26=" + str_sprintf("%.1f", isnan(id(pv2_voltage).state) ? 0.0f : id(pv2_voltage).state);
+                  u += "&V27=" + str_sprintf("%d", (int)(isnan(id(pv2_power).state) ? 0 : id(pv2_power).state));
