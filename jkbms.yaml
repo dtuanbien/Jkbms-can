@@ -157,7 +157,7 @@ interval:
                   u += "&V16=" + str_sprintf("%.3f", isnan(id(cell_6).state) ? 0.0f : id(cell_6).state);
                   u += "&V17=" + str_sprintf("%.3f", isnan(id(cell_7).state) ? 0.0f : id(cell_7).state);
                   u += "&V18=" + str_sprintf("%.3f", isnan(id(cell_8).state) ? 0.0f : id(cell_8).state);
-               - interval: 6s
+  - interval: 6s
     then:
       - if:
           condition: wifi.connected
