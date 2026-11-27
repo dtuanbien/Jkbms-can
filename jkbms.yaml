@@ -241,16 +241,22 @@ switch:
 
 canbus:
   - platform: esp32_can
+    id: my_canbus
+    can_id: 4
     tx_pin: GPIO5
     rx_pin: GPIO4
     bit_rate: 500kbps
-    id: my_canbus
 
 interval:
   # --- GỬI DỮ LIỆU CAN PYLONTECH MỖI 1 GIÂY ---
   - interval: 1s
     then:
       - lambda: |-
+          // Chỉ gửi CAN khi đã đọc được dữ liệu hợp lệ từ JK-BMS
+          if (isnan(id(bms_voltage).state) || isnan(id(bms_soc).state)) {
+            return;
+          }
+
           uint16_t cv = (uint16_t)(id(charge_voltage).state * 10);
           uint16_t ccl = (uint16_t)(id(max_charge_current).state * 10);
           uint16_t dcl = (uint16_t)(id(max_discharge_current).state * 10);
@@ -273,8 +279,8 @@ interval:
           id(my_canbus).send_data(0x355, false, data_355);
 
           int16_t v = (int16_t)(id(bms_voltage).state * 100);
-          int16_t i = (int16_t)(id(bms_current).state * 10);
-          int16_t t = (int16_t)(id(bms_temp1).state * 10);
+          int16_t i = isnan(id(bms_current).state) ? 0 : (int16_t)(id(bms_current).state * 10);
+          int16_t t = isnan(id(bms_temp1).state) ? 250 : (int16_t)(id(bms_temp1).state * 10);
           std::vector<uint8_t> data_356 = {
             (uint8_t)(v & 0xFF), (uint8_t)((v >> 8) & 0xFF),
             (uint8_t)(i & 0xFF), (uint8_t)((i >> 8) & 0xFF),
@@ -293,8 +299,8 @@ interval:
     then:
       - http_request.get:
           url: !lambda |-
-            char url[320];
-            // Thay YOUR_BLYNK_TOKEN bằng Auth Token của bạn
+            char url[360];
+            // Thay YOUR_BLYNK_TOKEN và các chân V0..V7 theo template Blynk của bạn
             snprintf(url, sizeof(url),
               "http://blynk.cloud",
               isnan(id(bms_voltage).state) ? 0.0 : id(bms_voltage).state,
