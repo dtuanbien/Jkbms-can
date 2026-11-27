@@ -93,11 +93,13 @@ interval:
       - canbus.send:
           canbus_id: can_bus
           can_id: 0x35C
-          data: [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+          data: !lambda |-
+            return {0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
       - canbus.send:
           canbus_id: can_bus
           can_id: 0x35E
-          data: [0x50, 0x59, 0x4C, 0x4F, 0x4E, 0x20, 0x20, 0x20]
+          data: !lambda |-
+            return {0x50, 0x59, 0x4C, 0x4F, 0x4E, 0x20, 0x20, 0x20};
 
   - interval: 5s
     then:
@@ -107,19 +109,17 @@ interval:
           then:
             - http_request.get:
                 url: !lambda |-
-                  char buf[300];
-                  snprintf(buf, sizeof(buf),
-                    "http://blynk.cloud{blynk_token}&V0=%.0f&V1=%.2f&V2=%.1f&V3=%.0f&V4=%.0f&V7=%.1f&V8=%.1f&V9=%.1f&V10=%.3f",
-                    isnan(id(state_of_charge).state) ? 0 : id(state_of_charge).state,
-                    isnan(id(total_voltage).state) ? 0 : id(total_voltage).state,
-                    isnan(id(current).state) ? 0 : id(current).state,
-                    isnan(id(pv1_power).state) ? 0 : id(pv1_power).state,
-                    isnan(id(load_power).state) ? 0 : id(load_power).state,
-                    isnan(id(grid_voltage).state) ? 0 : id(grid_voltage).state,
-                    isnan(id(mos_temp).state) ? 0 : id(mos_temp).state,
-                    isnan(id(temp_1).state) ? 0 : id(temp_1).state,
-                    isnan(id(delta_cell_v).state) ? 0 : id(delta_cell_v).state);
-                  return std::string(buf);
+                  std::string u = "http://blynk.cloud{blynk_token}";
+                  u += "&V0=" + to_string((int)(isnan(id(state_of_charge).state) ? 0 : id(state_of_charge).state));
+                  u += "&V1=" + str_sprintf("%.2f", isnan(id(total_voltage).state) ? 0.0f : id(total_voltage).state);
+                  u += "&V2=" + str_sprintf("%.1f", isnan(id(current).state) ? 0.0f : id(current).state);
+                  u += "&V3=" + to_string((int)(isnan(id(pv1_power).state) ? 0 : id(pv1_power).state));
+                  u += "&V4=" + to_string((int)(isnan(id(load_power).state) ? 0 : id(load_power).state));
+                  u += "&V7=" + str_sprintf("%.1f", isnan(id(grid_voltage).state) ? 0.0f : id(grid_voltage).state);
+                  u += "&V8=" + str_sprintf("%.1f", isnan(id(mos_temp).state) ? 0.0f : id(mos_temp).state);
+                  u += "&V9=" + str_sprintf("%.1f", isnan(id(temp_1).state) ? 0.0f : id(temp_1).state);
+                  u += "&V10=" + str_sprintf("%.3f", isnan(id(delta_cell_v).state) ? 0.0f : id(delta_cell_v).state);
+                  return u;
 
   - interval: 8s
     then:
@@ -129,18 +129,16 @@ interval:
           then:
             - http_request.get:
                 url: !lambda |-
-                  char buf[300];
-                  snprintf(buf, sizeof(buf),
-                    "http://blynk.cloud{blynk_token}&V11=%.3f&V12=%.3f&V13=%.3f&V14=%.3f&V15=%.3f&V16=%.3f&V17=%.3f&V18=%.3f",
-                    isnan(id(cell_1).state) ? 0 : id(cell_1).state,
-                    isnan(id(cell_2).state) ? 0 : id(cell_2).state,
-                    isnan(id(cell_3).state) ? 0 : id(cell_3).state,
-                    isnan(id(cell_4).state) ? 0 : id(cell_4).state,
-                    isnan(id(cell_5).state) ? 0 : id(cell_5).state,
-                    isnan(id(cell_6).state) ? 0 : id(cell_6).state,
-                    isnan(id(cell_7).state) ? 0 : id(cell_7).state,
-                    isnan(id(cell_8).state) ? 0 : id(cell_8).state);
-                  return std::string(buf);
+                  std::string u = "http://blynk.cloud{blynk_token}";
+                  u += "&V11=" + str_sprintf("%.3f", isnan(id(cell_1).state) ? 0.0f : id(cell_1).state);
+                  u += "&V12=" + str_sprintf("%.3f", isnan(id(cell_2).state) ? 0.0f : id(cell_2).state);
+                  u += "&V13=" + str_sprintf("%.3f", isnan(id(cell_3).state) ? 0.0f : id(cell_3).state);
+                  u += "&V14=" + str_sprintf("%.3f", isnan(id(cell_4).state) ? 0.0f : id(cell_4).state);
+                  u += "&V15=" + str_sprintf("%.3f", isnan(id(cell_5).state) ? 0.0f : id(cell_5).state);
+                  u += "&V16=" + str_sprintf("%.3f", isnan(id(cell_6).state) ? 0.0f : id(cell_6).state);
+                  u += "&V17=" + str_sprintf("%.3f", isnan(id(cell_7).state) ? 0.0f : id(cell_7).state);
+                  u += "&V18=" + str_sprintf("%.3f", isnan(id(cell_8).state) ? 0.0f : id(cell_8).state);
+                  return u;
 
   - interval: 6s
     then:
@@ -281,17 +279,3 @@ sensor:
     cell_voltage_5:
       name: "Pin - Cell 5 Voltage"
       id: cell_5
-    cell_voltage_6:
-      name: "Pin - Cell 6 Voltage"
-      id: cell_6
-    cell_voltage_7:
-      name: "Pin - Cell 7 Voltage"
-      id: cell_7
-    cell_voltage_8:
-      name: "Pin - Cell 8 Voltage"
-      id: cell_8
-
-  - platform: modbus_controller
-    modbus_controller_id: senergy_inv
-    name: "Senergy - Dien Ap Luoi (V)"
-    id: grid_voltage
