@@ -1,6 +1,7 @@
 substitutions:
   name: jkbms-senergy
   jk_bms_mac: "C8:47:8C:10:79:7A"
+  blynk_token: "YApwHwb_atq5PAiQzC-OqHsb74EPLW6e"
 
 esphome:
   name: ${name}
@@ -25,10 +26,9 @@ web_server:
   port: 80
   version: 3
 
-mqtt:
-  broker: "://hivemq.com"
-  port: 1883
-  topic_prefix: "tuanbien_senergy_jkbms"
+http_request:
+  useragent: esphome/device
+  timeout: 5s
 
 ota:
   platform: esphome
@@ -119,6 +119,23 @@ interval:
           can_id: 0x35E
           data: [0x50, 0x59, 0x4C, 0x4F, 0x4E, 0x20, 0x20, 0x20]
 
+  # Gửi dữ liệu lên Blynk mỗi 5 giây để xem qua 4G
+  - interval: 5s
+    then:
+      - http_request.get:
+          url: !lambda |-
+            char buf[256];
+            snprintf(buf, sizeof(buf),
+              "http://blynk.cloud{blynk_token}&V0=%.2f&V1=%.1f&V2=%.0f&V3=%.0f&V4=%.0f&V5=%.0f",
+              isnan(id(total_voltage).state) ? 0.0 : id(total_voltage).state,
+              isnan(id(current).state) ? 0.0 : id(current).state,
+              isnan(id(state_of_charge).state) ? 0.0 : id(state_of_charge).state,
+              isnan(id(pv1_power).state) ? 0.0 : id(pv1_power).state,
+              isnan(id(pv2_power).state) ? 0.0 : id(pv2_power).state,
+              isnan(id(load_power).state) ? 0.0 : id(load_power).state
+            );
+            return std::string(buf);
+
 # ==========================================
 # 3. GIAO TIẾP RS485 VỚI BIẾN TẦN SENERGY
 # ==========================================
@@ -199,6 +216,7 @@ sensor:
   - platform: modbus_controller
     modbus_controller_id: senergy_inv
     name: "Senergy - Cong Suat PV1 (W)"
+    id: pv1_power
     address: 0x100A
     register_type: read
     value_type: U_WORD
@@ -207,6 +225,7 @@ sensor:
   - platform: modbus_controller
     modbus_controller_id: senergy_inv
     name: "Senergy - Cong Suat PV2 (W)"
+    id: pv2_power
     address: 0x100D
     register_type: read
     value_type: U_WORD
@@ -215,6 +234,7 @@ sensor:
   - platform: modbus_controller
     modbus_controller_id: senergy_inv
     name: "Senergy - Cong Suat Tai (W)"
+    id: load_power
     address: 0x1018
     register_type: read
     value_type: S_WORD
@@ -317,28 +337,4 @@ number:
     max_value: 4000
     step: 100
     unit_of_measurement: "W"
-    mode: slider
-
-  - platform: modbus_controller
-    modbus_controller_id: senergy_inv
-    name: "Senergy - Gioi Han Dong Sac (A)"
-    address: 0x2016
-    register_type: holding
-    value_type: U_WORD
-    min_value: 0
-    max_value: 120
-    step: 5
-    unit_of_measurement: "A"
-    mode: slider
-
-  - platform: modbus_controller
-    modbus_controller_id: senergy_inv
-    name: "Senergy - SOC Cat Xa Toi Thieu (%)"
-    address: 0x2017
-    register_type: holding
-    value_type: U_WORD
-    min_value: 5
-    max_value: 90
-    step: 5
-    unit_of_measurement: "%"
     mode: slider
