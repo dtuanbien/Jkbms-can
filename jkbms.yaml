@@ -1,6 +1,7 @@
 substitutions:
   name: jkbms-senergy
   jk_bms_mac: "C8:47:8C:10:79:7A"
+  blynk_token: "YApwHwb_atq5PAiQzC-0qHsb74EPLW6e"
 
 esphome:
   name: ${name}
@@ -16,33 +17,27 @@ logger:
 wifi:
   ssid: "TUAN BIEN"
   password: "76767676"
-  power_save_mode: LIGHT
   reboot_timeout: 0s
-  manual_ip:
-    static_ip: 192.168.10.200
-    gateway: 192.168.10.1
-    subnet: 255.255.255.0
-    dns1: 8.8.8.8
-    dns2: 1.1.1.1
   ap:
     ssid: "JK-BMS-Fallback"
     password: "12345678"
 
 captive_portal:
 
+# Giữ giao diện Web mượt như bản trước (có sẵn OTA và chế độ Sáng/Tối)
 web_server:
   port: 80
-  version: 2
+  version: 3
 
+ota:
+  platform: esphome
+
+# Chỉ thêm đúng phần gửi dữ liệu ra Blynk để xem từ xa qua 4G
 http_request:
   useragent: esphome/device
   timeout: 2s
   verify_ssl: false
 
-ota:
-  platform: esphome
-
-# Tối ưu quét và giữ kết nối Bluetooth BLE ổn định, không bị rớt
 esp32_ble_tracker:
   scan_parameters:
     interval: 1100ms
@@ -59,10 +54,10 @@ external_components:
 jk_bms_ble:
   - ble_client_id: client0
     protocol_version: JK02_32S
-    throttle: 5s
+    throttle: 3s
     id: bms0
 
-# Giao tiếp CAN sang biến tần Senergy (SN65HVD230)
+# Giao tiếp CAN Pylontech sang biến tần Senergy 4kW
 canbus:
   - platform: esp32_can
     id: can_bus
@@ -70,23 +65,6 @@ canbus:
     tx_pin: GPIO4
     rx_pin: GPIO5
     bit_rate: 500kbps
-
-# Giao tiếp RS485 đọc dữ liệu PV / Load / Grid từ Senergy (MAX485)
-uart:
-  id: mod_bus_uart
-  tx_pin: GPIO17
-  rx_pin: GPIO16
-  baud_rate: 9600
-
-modbus:
-  id: senergy_modbus
-  uart_id: mod_bus_uart
-
-modbus_controller:
-  - id: senergy
-    address: 0x01
-    modbus_id: senergy_modbus
-    update_interval: 5s
 
 # Nút nhấn vật lý bật/tắt BMS (GPIO25)
 binary_sensor:
@@ -109,7 +87,7 @@ binary_sensor:
               - switch.turn_on: bms_charge_sw
               - switch.turn_on: bms_discharge_sw
 
-# Các thông số cài đặt giới hạn CAN và Senergy
+# Các thanh chỉnh thông số CAN
 number:
   - platform: template
     name: "CAN Charge Voltage"
@@ -151,39 +129,22 @@ number:
     initial_value: 75
     restore_value: true
     unit_of_measurement: "A"
-  - platform: modbus_controller
-    modbus_controller_id: senergy
-    name: "Senergy Export Power Limit"
-    id: senergy_export_limit
-    address: 0x0108
-    register_type: holding
-    value_type: U_WORD
-    min_value: 0
-    max_value: 4000
-    step: 10
-    unit_of_measurement: "W"
 
-# Công tắc điều khiển BMS và Bám tải Senergy
+# Công tắc điều khiển BMS
 switch:
   - platform: jk_bms_ble
     jk_bms_ble_id: bms0
     charging: { name: "BMS Charging Switch", id: bms_charge_sw }
     discharging: { name: "BMS Discharging Switch", id: bms_discharge_sw }
     balancer: { name: "BMS Balancer Switch", id: bms_balance_sw }
-  - platform: modbus_controller
-    modbus_controller_id: senergy
-    name: "Senergy Export Enable"
-    id: senergy_export_sw
-    address: 0x0107
-    register_type: holding
-    bitmask: 1
 
-# Cảm biến từ JK BMS và Biến tần Senergy
+# Cảm biến đọc từ JK BMS (đầy đủ 8 cell)
 sensor:
   - platform: jk_bms_ble
     jk_bms_ble_id: bms0
     total_voltage: { name: "Battery Voltage", id: total_voltage }
     current: { name: "Battery Current", id: current }
+    power: { name: "Battery Power", id: power }
     state_of_charge: { name: "Battery SoC", id: state_of_charge }
     capacity_remaining: { name: "Remaining Capacity", id: rem_capacity }
     power_tube_temperature: { name: "MOS Temperature", id: mos_temp }
@@ -197,33 +158,8 @@ sensor:
     cell_voltage_6: { name: "Cell 6", id: cell_6 }
     cell_voltage_7: { name: "Cell 7", id: cell_7 }
     cell_voltage_8: { name: "Cell 8", id: cell_8 }
-  - platform: modbus_controller
-    modbus_controller_id: senergy
-    name: "PV1 Power"
-    id: pv1_power
-    address: 0x000A
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "W"
-  - platform: modbus_controller
-    modbus_controller_id: senergy
-    name: "Load Power"
-    id: load_power
-    address: 0x001E
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "W"
-  - platform: modbus_controller
-    modbus_controller_id: senergy
-    name: "Grid Voltage"
-    id: grid_voltage
-    address: 0x0012
-    register_type: read
-    value_type: U_WORD
-    filters: [{ multiply: 0.1 }]
-    unit_of_measurement: "V"
 
-# Gửi bản tin CAN Pylontech và đồng bộ Blynk qua Internet
+# Gửi bản tin CAN sang Senergy và đẩy dữ liệu lên Blynk để xem qua 4G
 interval:
   - interval: 1s
     then:
@@ -271,13 +207,10 @@ interval:
           then:
             - http_request.get:
                 url: !lambda |-
-                  std::string u = "http://blynk.cloud";
+                  std::string u = "http://blynk.cloud{blynk_token}";
                   u += "&V0=" + to_string((int)(isnan(id(state_of_charge).state) ? 0 : id(state_of_charge).state));
                   u += "&V1=" + str_sprintf("%.2f", isnan(id(total_voltage).state) ? 0.0f : id(total_voltage).state);
                   u += "&V2=" + str_sprintf("%.1f", isnan(id(current).state) ? 0.0f : id(current).state);
-                  u += "&V3=" + to_string((int)(isnan(id(pv1_power).state) ? 0 : id(pv1_power).state));
-                  u += "&V4=" + to_string((int)(isnan(id(load_power).state) ? 0 : id(load_power).state));
-                  u += "&V7=" + str_sprintf("%.1f", isnan(id(grid_voltage).state) ? 0.0f : id(grid_voltage).state);
                   u += "&V8=" + str_sprintf("%.1f", isnan(id(mos_temp).state) ? 0.0f : id(mos_temp).state);
                   u += "&V9=" + str_sprintf("%.1f", isnan(id(temp_1).state) ? 0.0f : id(temp_1).state);
                   u += "&V10=" + str_sprintf("%.3f", isnan(id(delta_cell_v).state) ? 0.0f : id(delta_cell_v).state);
