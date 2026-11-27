@@ -1,7 +1,6 @@
 substitutions:
   name: jkbms-senergy
   jk_bms_mac: "C8:47:8C:10:79:7A"
-  blynk_token: "YApwHwb_atq5PAiQzC-0qHsb74EPLW6e"
 
 esphome:
   name: ${name}
@@ -59,7 +58,6 @@ jk_bms_ble:
     throttle: 3s
     id: bms0
 
-# Giao tiếp CAN sang biến tần Senergy (SN65HVD230)
 canbus:
   - platform: esp32_can
     id: can_bus
@@ -68,7 +66,6 @@ canbus:
     rx_pin: GPIO5
     bit_rate: 500kbps
 
-# Giao tiếp RS485 đọc dữ liệu PV / Load / Grid từ Senergy (Module MAX485 nối GPIO16/17)
 uart:
   id: mod_bus_uart
   tx_pin: GPIO17
@@ -85,7 +82,6 @@ modbus_controller:
     modbus_id: senergy_modbus
     update_interval: 5s
 
-# Nút nhấn vật lý bật/tắt BMS
 binary_sensor:
   - platform: gpio
     pin:
@@ -106,7 +102,6 @@ binary_sensor:
               - switch.turn_on: bms_charge_sw
               - switch.turn_on: bms_discharge_sw
 
-# Các thông số cài đặt (Đồng bộ với Blynk V6, V22, V23, V24, V25)
 number:
   - platform: template
     name: "CAN Charge Voltage"
@@ -118,7 +113,6 @@ number:
     initial_value: 28.4
     restore_value: true
     unit_of_measurement: "V"
-
   - platform: template
     name: "CAN Discharge Voltage"
     id: can_discharge_v
@@ -129,7 +123,6 @@ number:
     initial_value: 25.0
     restore_value: true
     unit_of_measurement: "V"
-
   - platform: template
     name: "CAN Charge Current Limit"
     id: can_charge_i
@@ -140,7 +133,6 @@ number:
     initial_value: 70
     restore_value: true
     unit_of_measurement: "A"
-
   - platform: template
     name: "CAN Discharge Current Limit"
     id: can_discharge_i
@@ -151,7 +143,6 @@ number:
     initial_value: 75
     restore_value: true
     unit_of_measurement: "A"
-
   - platform: modbus_controller
     modbus_controller_id: senergy
     name: "Senergy Export Power Limit"
@@ -164,20 +155,12 @@ number:
     step: 10
     unit_of_measurement: "W"
 
-# Công tắc điều khiển BMS và Bám tải / Đẩy lưới Senergy
 switch:
   - platform: jk_bms_ble
     jk_bms_ble_id: bms0
-    charging:
-      name: "BMS Charging Switch"
-      id: bms_charge_sw
-    discharging:
-      name: "BMS Discharging Switch"
-      id: bms_discharge_sw
-    balancer:
-      name: "BMS Balancer Switch"
-      id: bms_balance_sw
-
+    charging: { name: "BMS Charging Switch", id: bms_charge_sw }
+    discharging: { name: "BMS Discharging Switch", id: bms_discharge_sw }
+    balancer: { name: "BMS Balancer Switch", id: bms_balance_sw }
   - platform: modbus_controller
     modbus_controller_id: senergy
     name: "Senergy Export Enable"
@@ -186,56 +169,24 @@ switch:
     register_type: holding
     bitmask: 1
 
-# Cảm biến đọc từ JK BMS và Biến tần Senergy
 sensor:
   - platform: jk_bms_ble
     jk_bms_ble_id: bms0
-    total_voltage:
-      name: "Battery Voltage"
-      id: total_voltage
-    current:
-      name: "Battery Current"
-      id: current
-    state_of_charge:
-      name: "Battery SoC"
-      id: state_of_charge
-    capacity_remaining:
-      name: "Remaining Capacity"
-      id: rem_capacity
-    power_tube_temperature:
-      name: "MOS Temperature"
-      id: mos_temp
-    temperature_sensor_1:
-      name: "Battery Temp 1"
-      id: temp_1
-    delta_cell_voltage:
-      name: "Delta Cell Voltage"
-      id: delta_cell_v
-    cell_voltage_1:
-      name: "Cell 1"
-      id: cell_1
-    cell_voltage_2:
-      name: "Cell 2"
-      id: cell_2
-    cell_voltage_3:
-      name: "Cell 3"
-      id: cell_3
-    cell_voltage_4:
-      name: "Cell 4"
-      id: cell_4
-    cell_voltage_5:
-      name: "Cell 5"
-      id: cell_5
-    cell_voltage_6:
-      name: "Cell 6"
-      id: cell_6
-    cell_voltage_7:
-      name: "Cell 7"
-      id: cell_7
-    cell_voltage_8:
-      name: "Cell 8"
-      id: cell_8
-
+    total_voltage: { name: "Battery Voltage", id: total_voltage }
+    current: { name: "Battery Current", id: current }
+    state_of_charge: { name: "Battery SoC", id: state_of_charge }
+    capacity_remaining: { name: "Remaining Capacity", id: rem_capacity }
+    power_tube_temperature: { name: "MOS Temperature", id: mos_temp }
+    temperature_sensor_1: { name: "Battery Temp 1", id: temp_1 }
+    delta_cell_voltage: { name: "Delta Cell Voltage", id: delta_cell_v }
+    cell_voltage_1: { name: "Cell 1", id: cell_1 }
+    cell_voltage_2: { name: "Cell 2", id: cell_2 }
+    cell_voltage_3: { name: "Cell 3", id: cell_3 }
+    cell_voltage_4: { name: "Cell 4", id: cell_4 }
+    cell_voltage_5: { name: "Cell 5", id: cell_5 }
+    cell_voltage_6: { name: "Cell 6", id: cell_6 }
+    cell_voltage_7: { name: "Cell 7", id: cell_7 }
+    cell_voltage_8: { name: "Cell 8", id: cell_8 }
   - platform: modbus_controller
     modbus_controller_id: senergy
     name: "PV1 Power"
@@ -244,7 +195,6 @@ sensor:
     register_type: read
     value_type: U_WORD
     unit_of_measurement: "W"
-
   - platform: modbus_controller
     modbus_controller_id: senergy
     name: "Load Power"
@@ -253,7 +203,6 @@ sensor:
     register_type: read
     value_type: U_WORD
     unit_of_measurement: "W"
-
   - platform: modbus_controller
     modbus_controller_id: senergy
     name: "Grid Voltage"
@@ -261,11 +210,9 @@ sensor:
     address: 0x0012
     register_type: read
     value_type: U_WORD
-    filters:
-      - multiply: 0.1
+    filters: [{ multiply: 0.1 }]
     unit_of_measurement: "V"
 
-# Vòng lặp gửi CAN Pylontech và đồng bộ Blynk 2 chiều qua Internet
 interval:
   - interval: 1s
     then:
@@ -313,7 +260,7 @@ interval:
           then:
             - http_request.get:
                 url: !lambda |-
-                  std::string u = "http://blynk.cloud{blynk_token}";
+                  std::string u = "http://blynk.cloud";
                   u += "&V0=" + to_string((int)(isnan(id(state_of_charge).state) ? 0 : id(state_of_charge).state));
                   u += "&V1=" + str_sprintf("%.2f", isnan(id(total_voltage).state) ? 0.0f : id(total_voltage).state);
                   u += "&V2=" + str_sprintf("%.1f", isnan(id(current).state) ? 0.0f : id(current).state);
@@ -333,10 +280,25 @@ interval:
           then:
             - http_request.get:
                 url: !lambda |-
-                  std::string u = "http://blynk.cloud{blynk_token}";
+                  std::string u = "http://blynk.cloud";
                   u += "&V11=" + str_sprintf("%.3f", isnan(id(cell_1).state) ? 0.0f : id(cell_1).state);
                   u += "&V12=" + str_sprintf("%.3f", isnan(id(cell_2).state) ? 0.0f : id(cell_2).state);
                   u += "&V13=" + str_sprintf("%.3f", isnan(id(cell_3).state) ? 0.0f : id(cell_3).state);
                   u += "&V14=" + str_sprintf("%.3f", isnan(id(cell_4).state) ? 0.0f : id(cell_4).state);
                   u += "&V15=" + str_sprintf("%.3f", isnan(id(cell_5).state) ? 0.0f : id(cell_5).state);
                   u += "&V16=" + str_sprintf("%.3f", isnan(id(cell_6).state) ? 0.0f : id(cell_6).state);
+                  u += "&V17=" + str_sprintf("%.3f", isnan(id(cell_7).state) ? 0.0f : id(cell_7).state);
+                  u += "&V18=" + str_sprintf("%.3f", isnan(id(cell_8).state) ? 0.0f : id(cell_8).state);
+                  return u;
+
+  - interval: 6s
+    then:
+      - if:
+          condition: wifi.connected
+          then:
+            - http_request.get:
+                url: "http://blynk.cloud"
+                capture_response: true
+                on_response:
+                  then:
+                    - lambda: |-
