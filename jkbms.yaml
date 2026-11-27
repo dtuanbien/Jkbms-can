@@ -22,8 +22,6 @@ wifi:
     static_ip: 192.168.1.200
     gateway: 192.168.1.1
     subnet: 255.255.255.0
-
-  # Điểm phát WiFi dự phòng tự kích hoạt khi mất mạng nhà
   ap:
     ssid: "JK-BMS-Fallback"
     password: "12345678"
@@ -41,9 +39,6 @@ http_request:
 ota:
   platform: esphome
 
-# ==========================================
-# 1. BLUETOOTH JK BMS
-# ==========================================
 esp32_ble_tracker:
   scan_parameters:
     active: false
@@ -61,9 +56,6 @@ jk_bms_ble:
     throttle: 3s
     id: bms0
 
-# ==========================================
-# 2. CỔNG CAN PYLONTECH GỬI SENERGY 4KW
-# ==========================================
 canbus:
   - platform: esp32_can
     id: can_bus
@@ -73,7 +65,6 @@ canbus:
     bit_rate: 500kbps
 
 interval:
-  # Gửi dữ liệu CAN sang biến tần mỗi 1 giây (Chạy độc lập kể cả khi mất WiFi)
   - interval: 1s
     then:
       - canbus.send:
@@ -84,12 +75,7 @@ interval:
             uint16_t ci = (uint16_t)(id(can_charge_i).state * 10);
             uint16_t di = (uint16_t)(id(can_discharge_i).state * 10);
             uint16_t dv = (uint16_t)(id(can_discharge_v).state * 10);
-            return {
-              (uint8_t)(cv & 0xFF), (uint8_t)(cv >> 8),
-              (uint8_t)(ci & 0xFF), (uint8_t)(ci >> 8),
-              (uint8_t)(di & 0xFF), (uint8_t)(di >> 8),
-              (uint8_t)(dv & 0xFF), (uint8_t)(dv >> 8)
-            };
+            return {(uint8_t)(cv & 0xFF), (uint8_t)(cv >> 8), (uint8_t)(ci & 0xFF), (uint8_t)(ci >> 8), (uint8_t)(di & 0xFF), (uint8_t)(di >> 8), (uint8_t)(dv & 0xFF), (uint8_t)(dv >> 8)};
       - canbus.send:
           canbus_id: can_bus
           can_id: 0x355
@@ -103,11 +89,7 @@ interval:
             int16_t v = isnan(id(total_voltage).state) ? 2640 : (int16_t)(id(total_voltage).state * 100);
             int16_t i = isnan(id(current).state) ? 0 : (int16_t)(id(current).state * 10);
             int16_t t = isnan(id(temp_1).state) ? 250 : (int16_t)(id(temp_1).state * 10);
-            return {
-              (uint8_t)(v & 0xFF), (uint8_t)(v >> 8),
-              (uint8_t)(i & 0xFF), (uint8_t)(i >> 8),
-              (uint8_t)(t & 0xFF), (uint8_t)(t >> 8), 0, 0
-            };
+            return {(uint8_t)(v & 0xFF), (uint8_t)(v >> 8), (uint8_t)(i & 0xFF), (uint8_t)(i >> 8), (uint8_t)(t & 0xFF), (uint8_t)(t >> 8), 0, 0};
       - canbus.send:
           canbus_id: can_bus
           can_id: 0x35C
@@ -117,7 +99,6 @@ interval:
           can_id: 0x35E
           data: [0x50, 0x59, 0x4C, 0x4F, 0x4E, 0x20, 0x20, 0x20]
 
-  # Đẩy thông số lên App Blynk mỗi 5 giây (Chỉ chạy khi có WiFi)
   - interval: 5s
     then:
       - if:
@@ -126,22 +107,20 @@ interval:
           then:
             - http_request.get:
                 url: !lambda |-
-                  char buf[350];
-                  float soc = isnan(id(state_of_charge).state) ? 0 : id(state_of_charge).state;
-                  float v = isnan(id(total_voltage).state) ? 0 : id(total_voltage).state;
-                  float i = isnan(id(current).state) ? 0 : id(current).state;
-                  float pv1 = isnan(id(pv1_power).state) ? 0 : id(pv1_power).state;
-                  float load = isnan(id(load_power).state) ? 0 : id(load_power).state;
-                  float grid_v = isnan(id(grid_voltage).state) ? 0 : id(grid_voltage).state;
-                  float mos_t = isnan(id(mos_temp).state) ? 0 : id(mos_temp).state;
-                  float bat_t = isnan(id(temp_1).state) ? 0 : id(temp_1).state;
-                  float delta_v = isnan(id(delta_cell_v).state) ? 0 : id(delta_cell_v).state;
+                  char buf[300];
                   snprintf(buf, sizeof(buf),
                     "http://blynk.cloud{blynk_token}&V0=%.0f&V1=%.2f&V2=%.1f&V3=%.0f&V4=%.0f&V7=%.1f&V8=%.1f&V9=%.1f&V10=%.3f",
-                    soc, v, i, pv1, load, grid_v, mos_t, bat_t, delta_v);
+                    isnan(id(state_of_charge).state) ? 0 : id(state_of_charge).state,
+                    isnan(id(total_voltage).state) ? 0 : id(total_voltage).state,
+                    isnan(id(current).state) ? 0 : id(current).state,
+                    isnan(id(pv1_power).state) ? 0 : id(pv1_power).state,
+                    isnan(id(load_power).state) ? 0 : id(load_power).state,
+                    isnan(id(grid_voltage).state) ? 0 : id(grid_voltage).state,
+                    isnan(id(mos_temp).state) ? 0 : id(mos_temp).state,
+                    isnan(id(temp_1).state) ? 0 : id(temp_1).state,
+                    isnan(id(delta_cell_v).state) ? 0 : id(delta_cell_v).state);
                   return std::string(buf);
 
-  # Đẩy điện áp 8 Cell lên App Blynk mỗi 8 giây (Chỉ chạy khi có WiFi)
   - interval: 8s
     then:
       - if:
@@ -150,21 +129,19 @@ interval:
           then:
             - http_request.get:
                 url: !lambda |-
-                  char buf[350];
-                  float c1 = isnan(id(cell_1).state) ? 0 : id(cell_1).state;
-                  float c2 = isnan(id(cell_2).state) ? 0 : id(cell_2).state;
-                  float c3 = isnan(id(cell_3).state) ? 0 : id(cell_3).state;
-                  float c4 = isnan(id(cell_4).state) ? 0 : id(cell_4).state;
-                  float c5 = isnan(id(cell_5).state) ? 0 : id(cell_5).state;
-                  float c6 = isnan(id(cell_6).state) ? 0 : id(cell_6).state;
-                  float c7 = isnan(id(cell_7).state) ? 0 : id(cell_7).state;
-                  float c8 = isnan(id(cell_8).state) ? 0 : id(cell_8).state;
+                  char buf[300];
                   snprintf(buf, sizeof(buf),
                     "http://blynk.cloud{blynk_token}&V11=%.3f&V12=%.3f&V13=%.3f&V14=%.3f&V15=%.3f&V16=%.3f&V17=%.3f&V18=%.3f",
-                    c1, c2, c3, c4, c5, c6, c7, c8);
+                    isnan(id(cell_1).state) ? 0 : id(cell_1).state,
+                    isnan(id(cell_2).state) ? 0 : id(cell_2).state,
+                    isnan(id(cell_3).state) ? 0 : id(cell_3).state,
+                    isnan(id(cell_4).state) ? 0 : id(cell_4).state,
+                    isnan(id(cell_5).state) ? 0 : id(cell_5).state,
+                    isnan(id(cell_6).state) ? 0 : id(cell_6).state,
+                    isnan(id(cell_7).state) ? 0 : id(cell_7).state,
+                    isnan(id(cell_8).state) ? 0 : id(cell_8).state);
                   return std::string(buf);
 
-  # Đọc lệnh điều khiển Công suất đẩy lưới (V6) & Bật/Tắt đẩy lưới (V5) từ Blynk
   - interval: 6s
     then:
       - if:
@@ -193,14 +170,10 @@ interval:
                     - lambda: |-
                         if (response->status_code == 200) {
                           int sw = atoi(body.c_str());
-                          if (sw == 1 && !id(senergy_export_sw).state) {
-                            id(senergy_export_sw).turn_on();
-                          } else if (sw == 0 && id(senergy_export_sw).state) {
-                            id(senergy_export_sw).turn_off();
-                          }
+                          if (sw == 1 && !id(senergy_export_sw).state) id(senergy_export_sw).turn_on();
+                          else if (sw == 0 && id(senergy_export_sw).state) id(senergy_export_sw).turn_off();
                         }
 
-  # Đọc lệnh Thanh trượt Điện áp sạc CAN (V22), Dòng sạc CAN (V23), Dòng xả CAN (V24) từ Blynk
   - interval: 7s
     then:
       - if:
@@ -250,9 +223,6 @@ interval:
                           }
                         }
 
-# ==========================================
-# 3. GIAO TIẾP RS485 VỚI BIẾN TẦN SENERGY
-# ==========================================
 uart:
   - id: uart_rs485
     tx_pin: GPIO17
@@ -269,4 +239,59 @@ modbus_controller:
     modbus_id: modbus_senergy
     update_interval: 5s
 
-# ==========================================
+sensor:
+  - platform: jk_bms_ble
+    jk_bms_ble_id: bms0
+    total_voltage:
+      name: "Pin - Total Voltage"
+      id: total_voltage
+    current:
+      name: "Pin - Current"
+      id: current
+    power:
+      name: "Pin - Power"
+    state_of_charge:
+      name: "Pin - State of Charge"
+      id: state_of_charge
+    mosfet_temperature:
+      name: "Pin - Nhiet Do MOS"
+      id: mos_temp
+    temperature_sensor_1:
+      name: "Pin - Temperature 1"
+      id: temp_1
+    min_cell_voltage:
+      name: "Pin - Min Cell Voltage"
+    max_cell_voltage:
+      name: "Pin - Max Cell Voltage"
+    delta_cell_voltage:
+      name: "Pin - Delta Cell Voltage"
+      id: delta_cell_v
+    cell_voltage_1:
+      name: "Pin - Cell 1 Voltage"
+      id: cell_1
+    cell_voltage_2:
+      name: "Pin - Cell 2 Voltage"
+      id: cell_2
+    cell_voltage_3:
+      name: "Pin - Cell 3 Voltage"
+      id: cell_3
+    cell_voltage_4:
+      name: "Pin - Cell 4 Voltage"
+      id: cell_4
+    cell_voltage_5:
+      name: "Pin - Cell 5 Voltage"
+      id: cell_5
+    cell_voltage_6:
+      name: "Pin - Cell 6 Voltage"
+      id: cell_6
+    cell_voltage_7:
+      name: "Pin - Cell 7 Voltage"
+      id: cell_7
+    cell_voltage_8:
+      name: "Pin - Cell 8 Voltage"
+      id: cell_8
+
+  - platform: modbus_controller
+    modbus_controller_id: senergy_inv
+    name: "Senergy - Dien Ap Luoi (V)"
+    id: grid_voltage
