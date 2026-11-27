@@ -1,110 +1,121 @@
+substitutions:
+  name: jkbms-monitor
+  friendly_name: "JK BMS Monitor"
+  # Chân kết nối UART với JK BMS
+  uart_tx_pin: GPIO17
+  uart_rx_pin: GPIO16
+  # Chân kết nối CANbus với Inverter (khớp với ảnh lỗi của bạn)
+  can_tx_pin: GPIO05
+  can_rx_pin: GPIO04
+  # Đổi tên topic này thành tên riêng của bạn để xem qua 4G không bị trùng
+  mqtt_topic: "jkbms/he_pin_16s_cua_toi"
+
 esphome:
-  name: jkbms-senergy
-  friendly_name: JK BMS & Senergy 4kW
+  name: ${name}
+  friendly_name: ${friendly_name}
 
 esp32:
   board: esp32dev
   framework:
-    type: esp-idf
+    type: arduino
 
+# Kết nối Wi-Fi (hoặc bộ phát Wi-Fi 4G)
 wifi:
-  ssid: !secret wifi_ssid
-  password: !secret wifi_password
+  ssid: "TEN_WIFI_CUA_BAN"
+  password: "MAT_KHAU_WIFI"
   ap:
-    ssid: "JKBMS-Senergy-Fallback"
-    password: "password1234"
+    ssid: "JKBMS-Fallback"
+    password: "password123"
 
 captive_portal:
 
-# Giao diện web trực tiếp trên trình duyệt (http://jkbms-senergy.local)
-web_server:
-  port: 80
-  version: 3
-  local: true
-
+# Bật Log & OTA cập nhật từ xa
 logger:
-  baud_rate: 0 # Tắt log qua UART0 nếu dùng chân TX0/RX0 cho RS485
-
-api:
+  level: INFO
 ota:
   - platform: esphome
 
-# Thư viện giao tiếp JK BMS của syssi
+# Giao diện Web v3 trực quan, gọn đẹp trên điện thoại
+web_server:
+  port: 80
+  version: 3
+
+# Khai báo thư viện JK BMS (syssi/esphome-jk-bms)
 external_components:
   - source: github://syssi/esphome-jk-bms@main
     refresh: 0s
 
-# 1. KẾT NỐI BLUETOOTH VỚI JK BMS
-esp32_ble_tracker:
-  scan_parameters:
-    active: true
-
-ble_client:
-  - mac_address: C8:47:8C:10:79:7A
-    id: client0
-
-jk_bms_ble:
-  - ble_client_id: client0
-    id: bms0
-    protocol_version: JK02_32S # Đổi thành JK02_24S nếu BMS bản cũ 24S
-    throttle: 2s
-
-# 2. KẾT NỐI RS485 MODBUS VỚI BIẾN TẦN SENERGY 4KW
+# Giao tiếp UART với JK BMS
 uart:
-  - id: mod_bus_uart
-    tx_pin: GPIO17 # Chân TX nối sang module RS485 (kiểm tra lại chân thực tế bạn đấu)
-    rx_pin: GPIO16 # Chân RX nối sang module RS485
-    baud_rate: 9600
-    stop_bits: 1
+  - id: uart_0
+    baud_rate: 115200
+    rx_buffer_size: 384
+    tx_pin: ${uart_tx_pin}
+    rx_pin: ${uart_rx_pin}
 
-modbus:
-  id: modbus1
-  uart_id: mod_bus_uart
-  send_wait_time: 200ms
+jk_bms:
+  - id: bms0
+    uart_id: uart_0
+    update_interval: 2s
 
-modbus_controller:
-  - id: senergy
-    address: 0x01
-    modbus_id: modbus1
-    setup_priority: -10
-    update_interval: 5s
+# Cấu hình CANbus sang Inverter (đã sửa lỗi thiếu can_id)
+canbus:
+  - platform: esp32_can
+    id: my_canbus
+    tx_pin: ${can_tx_pin}
+    rx_pin: ${can_rx_pin}
+    can_id: 0x351
+    bit_rate: 500kbps
 
-# 3. CÁC CẢM BIẾN HIỂN THỊ (ÁP, DÒNG, DUNG LƯỢNG ĐẦY, CELL & SENERGY)
+# Cấu hình MQTT Cloud để xem từ xa qua mạng 4G
+mqtt:
+  broker: "broker.emqx.io"
+  port: 1883
+  topic_prefix: ${mqtt_topic}
+  discover: false
+  keepalive: 30s
+  reboot_timeout: 15min
+
+# Toàn bộ cảm biến Áp, Dòng, Công suất, SOC và 16 Cell
 sensor:
-  # --- Thông số toàn khối JK BMS ---
-  - platform: jk_bms_ble
-    jk_bms_ble_id: bms0
+  - platform: jk_bms
+    jk_bms_id: bms0
     total_voltage:
-      name: "Pin - Dien Ap Tong (V)"
+      name: "1. Điện áp tổng"
+      id: bms_total_voltage
+      accuracy_decimals: 2
+      unit_of_measurement: "V"
+      icon: "mdi:flash"
     current:
-      name: "Pin - Dong Sac Xa (A)"
+      name: "2. Dòng sạc / xả"
+      id: bms_current
+      accuracy_decimals: 2
+      unit_of_measurement: "A"
+      icon: "mdi:current-dc"
     power:
-      name: "Pin - Cong Suat (W)"
-    charging_power:
-      name: "Pin - Cong Suat Sac (W)"
-    discharging_power:
-      name: "Pin - Cong Suat Xa (W)"
-    state_of_charge:
-      name: "Pin - Phan Tram Pin (%)"
+      name: "3. Công suất sạc / xả"
+      id: bms_power
+      accuracy_decimals: 1
+      unit_of_measurement: "W"
+      icon: "mdi:lightning-bolt"
     capacity_remaining:
-      name: "Pin - Dung Luong Con Lai (Ah)"
-    full_charge_capacity:
-      name: "Pin - Dung Luong Day (Ah)"
-    total_battery_capacity_setting:
-      name: "Pin - Dung Luong Cai Dat (Ah)"
-    temperature_sensor_1:
-      name: "Pin - Nhiet Do 1"
-    temperature_sensor_2:
-      name: "Pin - Nhiet Do 2"
-    power_tube_temperature:
-      name: "Pin - Nhiet Do MOS"
+      name: "4. Dung lượng pin (SOC)"
+      id: bms_soc
+      accuracy_decimals: 0
+      unit_of_measurement: "%"
+      icon: "mdi:battery-charging-100"
     min_cell_voltage:
-      name: "Pin - Min Cell Voltage"
+      name: "5. Cell thấp nhất"
+      id: bms_min_cell
+      accuracy_decimals: 3
     max_cell_voltage:
-      name: "Pin - Max Cell Voltage"
+      name: "6. Cell cao nhất"
+      id: bms_max_cell
+      accuracy_decimals: 3
     delta_cell_voltage:
-      name: "Pin - Lech Ap Cell (V)"
-    # Điện áp 8 cell (hệ 24V)
+      name: "7. Chênh lệch Cell (Delta)"
+      id: bms_delta_cell
+      accuracy_decimals: 3
     cell_voltage_1:
       name: "Cell 01"
     cell_voltage_2:
@@ -121,107 +132,97 @@ sensor:
       name: "Cell 07"
     cell_voltage_8:
       name: "Cell 08"
+    cell_voltage_9:
+      name: "Cell 09"
+    cell_voltage_10:
+      name: "Cell 10"
+    cell_voltage_11:
+      name: "Cell 11"
+    cell_voltage_12:
+      name: "Cell 12"
+    cell_voltage_13:
+      name: "Cell 13"
+    cell_voltage_14:
+      name: "Cell 14"
+    cell_voltage_15:
+      name: "Cell 15"
+    cell_voltage_16:
+      name: "Cell 16"
 
-  # --- Thông số biến tần Senergy 4kW (Thanh ghi Input) ---
-  - platform: modbus_controller
-    modbus_controller_id: senergy
-    name: "Senergy - Dien Ap Luoi (V)"
-    register_type: read
-    address: 0x1001
-    unit_of_measurement: "V"
-    value_type: U_WORD
-    filters:
-      - multiply: 0.1
+# Trạng thái Sạc / Xả / Đầy 100% hiển thị bằng tiếng Việt
+text_sensor:
+  - platform: template
+    name: "0. Trạng thái hoạt động"
+    id: bms_status_text
+    icon: "mdi:battery-sync"
+    update_interval: 2s
+    lambda: |-
+      float curr = id(bms_current).state;
+      float soc = id(bms_soc).state;
+      if (isnan(curr)) return {"Đang kết nối BMS..."};
+      if (soc >= 100.0 && curr >= -0.2 && curr <= 0.2) return {"Đầy pin 100% (Chế độ chờ)"};
+      if (curr > 0.2) return {"Đang SẠC vào pin"};
+      if (curr < -0.2) return {"Đang XẢ tải"};
+      return {"Đang chờ (Standby)"};
 
-  - platform: modbus_controller
-    modbus_controller_id: senergy
-    name: "Senergy - Cong Suat Luoi (W)"
-    register_type: read
-    address: 0x1005
-    unit_of_measurement: "W"
-    value_type: S_DWORD
+# Vòng lặp gửi dữ liệu sang Inverter (CANbus) và lên 4G (MQTT)
+interval:
+  # 1. Gửi dữ liệu sang Inverter mỗi 1 giây
+  - interval: 1s
+    then:
+      - lambda: |-
+          if (isnan(id(bms_total_voltage).state) || isnan(id(bms_current).state) || isnan(id(bms_soc).state)) {
+            return;
+          }
+          // Gói 0x351: Áp sạc 55.2V, Dòng sạc 50A, Dòng xả 50A, Áp ngắt 44.0V
+          uint16_t charge_v = 552;
+          int16_t charge_a  = 500;
+          int16_t discharge_a = 500;
+          uint16_t discharge_v = 440;
+          std::vector<uint8_t> data_351 = {
+            (uint8_t)(charge_v & 0xFF), (uint8_t)(charge_v >> 8),
+            (uint8_t)(charge_a & 0xFF), (uint8_t)(charge_a >> 8),
+            (uint8_t)(discharge_a & 0xFF), (uint8_t)(discharge_a >> 8),
+            (uint8_t)(discharge_v & 0xFF), (uint8_t)(discharge_v >> 8)
+          };
+          id(my_canbus).send_data(0x351, false, data_351);
 
-  - platform: modbus_controller
-    modbus_controller_id: senergy
-    name: "Senergy - Cong Suat PV1 (W)"
-    register_type: read
-    address: 0x1013
-    unit_of_measurement: "W"
-    value_type: U_DWORD
+          // Gói 0x355: SOC (%) và SOH (100%)
+          uint16_t soc = (uint16_t)id(bms_soc).state;
+          uint16_t soh = 100;
+          std::vector<uint8_t> data_355 = {
+            (uint8_t)(soc & 0xFF), (uint8_t)(soc >> 8),
+            (uint8_t)(soh & 0xFF), (uint8_t)(soh >> 8),
+            0x00, 0x00, 0x00, 0x00
+          };
+          id(my_canbus).send_data(0x355, false, data_355);
 
-  - platform: modbus_controller
-    modbus_controller_id: senergy
-    name: "Senergy - Cong Suat PV2 (W)"
-    register_type: read
-    address: 0x1017
-    unit_of_measurement: "W"
-    value_type: U_DWORD
+          // Gói 0x356: Áp thực tế, Dòng thực tế, Nhiệt độ 25°C
+          int16_t actual_v = (int16_t)(id(bms_total_voltage).state * 100.0f);
+          int16_t actual_a = (int16_t)(id(bms_current).state * 10.0f);
+          int16_t temp = 250;
+          std::vector<uint8_t> data_356 = {
+            (uint8_t)(actual_v & 0xFF), (uint8_t)(actual_v >> 8),
+            (uint8_t)(actual_a & 0xFF), (uint8_t)(actual_a >> 8),
+            (uint8_t)(temp & 0xFF), (uint8_t)(temp >> 8),
+            0x00, 0x00
+          };
+          id(my_canbus).send_data(0x356, false, data_356);
 
-  - platform: modbus_controller
-    modbus_controller_id: senergy
-    name: "Senergy - Cong Suat Tai (W)"
-    register_type: read
-    address: 0x100D
-    unit_of_measurement: "W"
-    value_type: U_DWORD
-
-# 4. CÔNG TẮC ĐIỀU KHIỂN (BẬT/TẮT SẠC, XẢ, ĐẨY LƯỚI)
-switch:
-  - platform: jk_bms_ble
-    jk_bms_ble_id: bms0
-    charging:
-      name: "Pin - Cong Tac Sac"
-    discharging:
-      name: "Pin - Cong Tac Xa"
-    balancer:
-      name: "Pin - Can Bang Chu Dong"
-
-  - platform: modbus_controller
-    modbus_controller_id: senergy
-    name: "Senergy - Cho Phep Day Luoi"
-    register_type: holding
-    address: 0x2014
-    bitmask: 1
-
-# 5. THANH TRƯỢT CÀI ĐẶT (DÒNG SẠC, SOC CẮT XẢ, CÔNG SUẤT ĐẨY LƯỚI)
-number:
-  - platform: modbus_controller
-    modbus_controller_id: senergy
-    name: "Senergy - Cong Suat Day Luoi (W)"
-    id: senergy_feed_in_power
-    register_type: holding
-    address: 0x2015
-    value_type: U_WORD
-    min_value: 0
-    max_value: 4000
-    step: 100
-    unit_of_measurement: "W"
-    mode: slider
-
-  - platform: modbus_controller
-    modbus_controller_id: senergy
-    name: "Senergy - Gioi Han Dong Sac (A)"
-    id: senergy_max_charge_current
-    register_type: holding
-    address: 0x2005
-    value_type: U_WORD
-    min_value: 0
-    max_value: 100
-    step: 5
-    unit_of_measurement: "A"
-    filters:
-      - multiply: 10
-    mode: slider
-
-  - platform: modbus_controller
-    modbus_controller_id: senergy
-    name: "Senergy - SOC Cat Xa Toi Thieu (%)"
-    id: senergy_min_soc
-    register_type: holding
-    address: 0x2008
-    value_type: U_WORD
-    min_value: 10
-    max_value: 90
-    step: 5
-    unit_of_measurement: "%"
-    mode: slider
+  # 2. Đẩy thông số lên Cloud xem qua 4G mỗi 5 giây
+  - interval: 5s
+    then:
+      - mqtt.publish:
+          topic: "${mqtt_topic}/tong_hop"
+          payload: !lambda |-
+            char buf[200];
+            snprintf(buf, sizeof(buf),
+              "{\"ap\":%.2f,\"dong\":%.2f,\"cong_suat\":%.1f,\"soc\":%.0f,\"delta\":%.3f,\"trang_thai\":\"%s\"}",
+              isnan(id(bms_total_voltage).state) ? 0.0 : id(bms_total_voltage).state,
+              isnan(id(bms_current).state) ? 0.0 : id(bms_current).state,
+              isnan(id(bms_power).state) ? 0.0 : id(bms_power).state,
+              isnan(id(bms_soc).state) ? 0.0 : id(bms_soc).state,
+              isnan(id(bms_delta_cell).state) ? 0.0 : id(bms_delta_cell).state,
+              id(bms_status_text).state.c_str()
+            );
+            return std::string(buf);
