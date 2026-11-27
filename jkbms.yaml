@@ -31,7 +31,7 @@ wifi:
 captive_portal:
 web_server:
   port: 80
-  version: 3
+  version: 2
 http_request:
   useragent: esphome/device
   timeout: 3s
