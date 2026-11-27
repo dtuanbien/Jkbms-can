@@ -315,3 +315,14 @@ interval:
           condition: wifi.connected
           then:
             - http_request.get:
+                url: !lambda |-
+                  std::string u = "http://blynk.cloud";
+                  u += "&V11=" + str_sprintf("%.3f", isnan(id(cell_1).state) ? 0.0f : id(cell_1).state);
+                  u += "&V12=" + str_sprintf("%.3f", isnan(id(cell_2).state) ? 0.0f : id(cell_2).state);
+                  u += "&V13=" + str_sprintf("%.3f", isnan(id(cell_3).state) ? 0.0f : id(cell_3).state);
+                  u += "&V14=" + str_sprintf("%.3f", isnan(id(cell_4).state) ? 0.0f : id(cell_4).state);
+                  u += "&V15=" + str_sprintf("%.3f", isnan(id(cell_5).state) ? 0.0f : id(cell_5).state);
+                  u += "&V16=" + str_sprintf("%.3f", isnan(id(cell_6).state) ? 0.0f : id(cell_6).state);
+                  u += "&V17=" + str_sprintf("%.3f", isnan(id(cell_7).state) ? 0.0f : id(cell_7).state);
+                  u += "&V18=" + str_sprintf("%.3f", isnan(id(cell_8).state) ? 0.0f : id(cell_8).state);
+                  return u;
