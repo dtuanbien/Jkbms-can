@@ -227,7 +227,6 @@ canbus:
   - platform: esp32_can
     tx_pin: GPIO5
     rx_pin: GPIO4
-    can_id: 4
     bit_rate: 500kbps
     id: my_canbus
 
