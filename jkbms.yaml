@@ -11,7 +11,7 @@ esp32:
     type: esp-idf
 
 logger:
-  level: WARN # Giảm log để tiết kiệm RAM cho ESP32
+  level: WARN
 
 wifi:
   ssid: "TUAN BIEN"
@@ -21,12 +21,10 @@ wifi:
     gateway: 192.168.1.1
     subnet: 255.255.255.0
 
-# Giao diện Web nội bộ (mở tại http://192.168.1.200)
 web_server:
   port: 80
   version: 3
 
-# Kết nối MQTT từ xa (nhẹ RAM, xem và chỉnh qua app IoT MQTT Panel bằng 4G)
 mqtt:
   broker: "://hivemq.com"
   port: 1883
@@ -36,7 +34,7 @@ ota:
   platform: esphome
 
 # ==========================================
-# 1. KẾT NỐI BLUETOOTH VỚI JK BMS
+# 1. BLUETOOTH JK BMS (CHỈ DÙNG 1 THƯ VIỆN CHUẨN)
 # ==========================================
 esp32_ble_tracker:
   scan_parameters:
@@ -48,7 +46,6 @@ ble_client:
 
 external_components:
   - source: github://syssi/esphome-jk-bms@main
-  - source: github://syssi/esphome-jk-bms-can@main
 
 jk_bms_ble:
   - ble_client_id: client0
@@ -57,7 +54,7 @@ jk_bms_ble:
     id: bms0
 
 # ==========================================
-# 2. GIAO TIẾP CAN SANG BIẾN TẦN SENERGY 4KW
+# 2. CỔNG CAN PYLONTECH GỬI SENERGY 4KW
 # ==========================================
 canbus:
   - platform: esp32_can
@@ -66,18 +63,63 @@ canbus:
     rx_pin: GPIO5
     bit_rate: 500kbps
 
-jk_bms_can:
-  - jk_bms_ble_id: bms0
-    canbus_id: can_bus
-    protocol: PYLON
-    update_interval: 1s
-    charge_voltage: 28.4V
-    charge_current_limit: 70A
-    discharge_current_limit: 75A
-    discharge_voltage: 25.0V
+interval:
+  - interval: 1s
+    then:
+      # Gói 0x351: Giới hạn Áp/Dòng Sạc & Xả
+      - canbus.send:
+          canbus_id: can_bus
+          can_id: 0x351
+          data: !lambda |-
+            uint16_t cv = (uint16_t)(id(can_charge_v).state * 10);
+            uint16_t ci = (uint16_t)(id(can_charge_i).state * 10);
+            uint16_t di = (uint16_t)(id(can_discharge_i).state * 10);
+            uint16_t dv = (uint16_t)(id(can_discharge_v).state * 10);
+            return {
+              (uint8_t)(cv & 0xFF), (uint8_t)(cv >> 8),
+              (uint8_t)(ci & 0xFF), (uint8_t)(ci >> 8),
+              (uint8_t)(di & 0xFF), (uint8_t)(di >> 8),
+              (uint8_t)(dv & 0xFF), (uint8_t)(dv >> 8)
+            };
+      # Gói 0x355: SOC (%) & SOH (%)
+      - canbus.send:
+          canbus_id: can_bus
+          can_id: 0x355
+          data: !lambda |-
+            uint16_t soc = isnan(id(state_of_charge).state) ? 50 : (uint16_t)id(state_of_charge).state;
+            uint16_t soh = 100;
+            return {
+              (uint8_t)(soc & 0xFF), (uint8_t)(soc >> 8),
+              (uint8_t)(soh & 0xFF), (uint8_t)(soh >> 8),
+              0x00, 0x00, 0x00, 0x00
+            };
+      # Gói 0x356: Điện áp thực tế, Dòng điện thực tế, Nhiệt độ
+      - canbus.send:
+          canbus_id: can_bus
+          can_id: 0x356
+          data: !lambda |-
+            int16_t v = isnan(id(total_voltage).state) ? 2640 : (int16_t)(id(total_voltage).state * 100);
+            int16_t i = isnan(id(current).state) ? 0 : (int16_t)(id(current).state * 10);
+            int16_t t = isnan(id(temp_1).state) ? 250 : (int16_t)(id(temp_1).state * 10);
+            return {
+              (uint8_t)(v & 0xFF), (uint8_t)(v >> 8),
+              (uint8_t)(i & 0xFF), (uint8_t)(i >> 8),
+              (uint8_t)(t & 0xFF), (uint8_t)(t >> 8),
+              0x00, 0x00
+            };
+      # Gói 0x35C: Cho phép Sạc & Xả
+      - canbus.send:
+          canbus_id: can_bus
+          can_id: 0x35C
+          data: [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+      # Gói 0x35E: Tên giao thức PYLON
+      - canbus.send:
+          canbus_id: can_bus
+          can_id: 0x35E
+          data: [0x50, 0x59, 0x4C, 0x4F, 0x4E, 0x20, 0x20, 0x20]
 
 # ==========================================
-# 3. GIAO TIẾP MODBUS RS485 VỚI BIẾN TẦN SENERGY
+# 3. GIAO TIẾP RS485 VỚI BIẾN TẦN SENERGY
 # ==========================================
 uart:
   - id: uart_rs485
@@ -96,10 +138,9 @@ modbus_controller:
     update_interval: 5s
 
 # ==========================================
-# 4. CÁC CẢM BIẾN HIỂN THỊ (PIN + BIẾN TẦN)
+# 4. CẢM BIẾN HIỂN THỊ (JK BMS + SENERGY)
 # ==========================================
 sensor:
-  # --- Thông số JK BMS ---
   - platform: jk_bms_ble
     jk_bms_ble_id: bms0
     total_voltage:
@@ -115,7 +156,6 @@ sensor:
       id: state_of_charge
     power_tube_temperature:
       name: "Pin - Nhiet Do MOS"
-      id: mos_temp
     temperature_sensor_1:
       name: "Pin - Temperature 1"
       id: temp_1
@@ -123,10 +163,8 @@ sensor:
       name: "Pin - Temperature 2"
     min_cell_voltage:
       name: "Pin - Min Cell Voltage"
-      id: min_cell_voltage
     max_cell_voltage:
       name: "Pin - Max Cell Voltage"
-      id: max_cell_voltage
     delta_cell_voltage:
       name: "Pin - Delta Cell Voltage"
     cell_voltage_1:
@@ -146,7 +184,6 @@ sensor:
     cell_voltage_8:
       name: "Pin - Cell 8 Voltage"
 
-  # --- Thông số Biến tần Senergy (Đọc qua RS485) ---
   - platform: modbus_controller
     modbus_controller_id: senergy_inv
     name: "Senergy - Dien Ap Luoi (V)"
@@ -191,7 +228,7 @@ sensor:
     unit_of_measurement: "W"
 
 # ==========================================
-# 5. CÔNG TẮC BẬT/TẮT (BMS + ĐẨY LƯỚI SENERGY)
+# 5. CÔNG TẮC BẬT/TẮT
 # ==========================================
 switch:
   - platform: jk_bms_ble
@@ -214,7 +251,6 @@ switch:
 # 6. THANH TRƯỢT ĐIỀU CHỈNH (CAN + SENERGY PV)
 # ==========================================
 number:
-  # --- Thanh chỉnh thông số BMS ---
   - platform: jk_bms_ble
     jk_bms_ble_id: bms0
     battery_capacity:
@@ -222,19 +258,54 @@ number:
     cell_count:
       name: "Pin - So Cell"
 
-  # --- Thanh chỉnh thông số CAN gửi biến tần ---
-  - platform: jk_bms_can
-    jk_bms_can_id: jk_bms_can_id
-    charge_voltage:
-      name: "CAN - Ap Sac Toi Da (V)"
-    discharge_voltage:
-      name: "CAN - Ap Cat Xa (V)"
-    charge_current_limit:
-      name: "CAN - Dong Sac Toi Da (A)"
-    discharge_current_limit:
-      name: "CAN - Dong Xa Toi Da (A)"
+  - platform: template
+    name: "CAN - Ap Sac Toi Da (V)"
+    id: can_charge_v
+    optimistic: true
+    restore_value: true
+    initial_value: 28.4
+    min_value: 24.0
+    max_value: 30.0
+    step: 0.1
+    unit_of_measurement: "V"
+    mode: slider
 
-  # --- Thanh chỉnh Biến tần Senergy qua RS485 ---
+  - platform: template
+    name: "CAN - Ap Cat Xa (V)"
+    id: can_discharge_v
+    optimistic: true
+    restore_value: true
+    initial_value: 25.0
+    min_value: 20.0
+    max_value: 26.0
+    step: 0.1
+    unit_of_measurement: "V"
+    mode: slider
+
+  - platform: template
+    name: "CAN - Dong Sac Toi Da (A)"
+    id: can_charge_i
+    optimistic: true
+    restore_value: true
+    initial_value: 70
+    min_value: 1
+    max_value: 150
+    step: 1
+    unit_of_measurement: "A"
+    mode: slider
+
+  - platform: template
+    name: "CAN - Dong Xa Toi Da (A)"
+    id: can_discharge_i
+    optimistic: true
+    restore_value: true
+    initial_value: 75
+    min_value: 1
+    max_value: 150
+    step: 1
+    unit_of_measurement: "A"
+    mode: slider
+
   - platform: modbus_controller
     modbus_controller_id: senergy_inv
     name: "Senergy - Cong Suat Day Luoi PV (W)"
