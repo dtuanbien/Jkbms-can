@@ -27,21 +27,15 @@ wifi:
     password: "12345678"
 
 captive_portal:
-
 web_server:
   port: 80
   version: 3
-
 http_request:
   useragent: esphome/device
   timeout: 3s
-
 ota:
   platform: esphome
 
-# ==========================================
-# 1. BLUETOOTH JK BMS
-# ==========================================
 esp32_ble_tracker:
   scan_parameters:
     active: false
@@ -59,9 +53,6 @@ jk_bms_ble:
     throttle: 3s
     id: bms0
 
-# ==========================================
-# 2. CỔNG CAN PYLONTECH GỬI SENERGY 4KW
-# ==========================================
 canbus:
   - platform: esp32_can
     id: can_bus
@@ -70,27 +61,19 @@ canbus:
     rx_pin: GPIO5
     bit_rate: 500kbps
 
-# ==========================================
-# 3. NÚT NHẤN CƠ BẬT/TẮT BMS (CHÂN GPIO25 - GND)
-# ==========================================
 binary_sensor:
   - platform: gpio
     pin:
       number: GPIO25
-      mode:
-        input: true
-        pullup: true
+      mode: { input: true, pullup: true }
       inverted: true
     name: "Nut Nhan Co Bat Tat BMS"
-    filters:
-      - delayed_on: 50ms
+    filters: [{ delayed_on: 50ms }]
     on_press:
       then:
         - if:
             condition:
-              or:
-                - switch.is_on: bms_charge_sw
-                - switch.is_on: bms_discharge_sw
+              or: [{ switch.is_on: bms_charge_sw }, { switch.is_on: bms_discharge_sw }]
             then:
               - switch.turn_off: bms_charge_sw
               - switch.turn_off: bms_discharge_sw
@@ -98,9 +81,6 @@ binary_sensor:
               - switch.turn_on: bms_charge_sw
               - switch.turn_on: bms_discharge_sw
 
-# ==========================================
-# 4. GỬI CAN & ĐỒNG BỘ BLYNK QUA 4G
-# ==========================================
 interval:
   - interval: 1s
     then:
@@ -112,12 +92,7 @@ interval:
             uint16_t ci = (uint16_t)(id(can_charge_i).state * 10);
             uint16_t di = (uint16_t)(id(can_discharge_i).state * 10);
             uint16_t dv = (uint16_t)(id(can_discharge_v).state * 10);
-            return {
-              (uint8_t)(cv & 0xFF), (uint8_t)(cv >> 8),
-              (uint8_t)(ci & 0xFF), (uint8_t)(ci >> 8),
-              (uint8_t)(di & 0xFF), (uint8_t)(di >> 8),
-              (uint8_t)(dv & 0xFF), (uint8_t)(dv >> 8)
-            };
+            return {(uint8_t)(cv & 0xFF), (uint8_t)(cv >> 8), (uint8_t)(ci & 0xFF), (uint8_t)(ci >> 8), (uint8_t)(di & 0xFF), (uint8_t)(di >> 8), (uint8_t)(dv & 0xFF), (uint8_t)(dv >> 8)};
       - canbus.send:
           canbus_id: can_bus
           can_id: 0x355
@@ -131,11 +106,7 @@ interval:
             int16_t v = isnan(id(total_voltage).state) ? 2640 : (int16_t)(id(total_voltage).state * 100);
             int16_t i = isnan(id(current).state) ? 0 : (int16_t)(id(current).state * 10);
             int16_t t = isnan(id(temp_1).state) ? 250 : (int16_t)(id(temp_1).state * 10);
-            return {
-              (uint8_t)(v & 0xFF), (uint8_t)(v >> 8),
-              (uint8_t)(i & 0xFF), (uint8_t)(i >> 8),
-              (uint8_t)(t & 0xFF), (uint8_t)(t >> 8), 0, 0
-            };
+            return {(uint8_t)(v & 0xFF), (uint8_t)(v >> 8), (uint8_t)(i & 0xFF), (uint8_t)(i >> 8), (uint8_t)(t & 0xFF), (uint8_t)(t >> 8), 0, 0};
       - canbus.send:
           canbus_id: can_bus
           can_id: 0x35C
@@ -150,8 +121,7 @@ interval:
   - interval: 5s
     then:
       - if:
-          condition:
-            wifi.connected:
+          condition: wifi.connected
           then:
             - http_request.get:
                 url: !lambda |-
@@ -170,8 +140,7 @@ interval:
   - interval: 8s
     then:
       - if:
-          condition:
-            wifi.connected:
+          condition: wifi.connected
           then:
             - http_request.get:
                 url: !lambda |-
@@ -185,12 +154,10 @@ interval:
                   u += "&V17=" + str_sprintf("%.3f", isnan(id(cell_7).state) ? 0.0f : id(cell_7).state);
                   u += "&V18=" + str_sprintf("%.3f", isnan(id(cell_8).state) ? 0.0f : id(cell_8).state);
                   return u;
-
   - interval: 6s
     then:
       - if:
-          condition:
-            wifi.connected:
+          condition: wifi.connected
           then:
             - http_request.get:
                 url: "http://blynk.cloud{blynk_token}&V6"
@@ -201,9 +168,7 @@ interval:
                         if (response->status_code == 200) {
                           float val = atof(body.c_str());
                           if (val >= 0 && val <= 4000 && val != id(senergy_export_limit).state) {
-                            auto call = id(senergy_export_limit).make_call();
-                            call.set_value(val);
-                            call.perform();
+                            auto call = id(senergy_export_limit).make_call(); call.set_value(val); call.perform();
                           }
                         }
             - http_request.get:
@@ -221,8 +186,7 @@ interval:
   - interval: 7s
     then:
       - if:
-          condition:
-            wifi.connected:
+          condition: wifi.connected
           then:
             - http_request.get:
                 url: "http://blynk.cloud{blynk_token}&V22"
@@ -233,9 +197,7 @@ interval:
                         if (response->status_code == 200) {
                           float val = atof(body.c_str());
                           if (val >= 25.0 && val <= 29.2 && fabs(val - id(can_charge_v).state) > 0.05) {
-                            auto call = id(can_charge_v).make_call();
-                            call.set_value(val);
-                            call.perform();
+                            auto call = id(can_charge_v).make_call(); call.set_value(val); call.perform();
                           }
                         }
             - http_request.get:
@@ -247,9 +209,7 @@ interval:
                         if (response->status_code == 200) {
                           float val = atof(body.c_str());
                           if (val >= 0 && val <= 100 && val != id(can_charge_i).state) {
-                            auto call = id(can_charge_i).make_call();
-                            call.set_value(val);
-                            call.perform();
+                            auto call = id(can_charge_i).make_call(); call.set_value(val); call.perform();
                           }
                         }
             - http_request.get:
@@ -261,124 +221,57 @@ interval:
                         if (response->status_code == 200) {
                           float val = atof(body.c_str());
                           if (val >= 0 && val <= 150 && val != id(can_discharge_i).state) {
-                            auto call = id(can_discharge_i).make_call();
-                            call.set_value(val);
-                            call.perform();
-    cell_voltage_7:
-      name: "Pin - Cell 7 Voltage"
-      id: cell_7
-    cell_voltage_8:
-      name: "Pin - Cell 8 Voltage"
-      id: cell_8
+                            auto call = id(can_discharge_i).make_call(); call.set_value(val); call.perform();
+                          }
+                        }
 
-  - platform: modbus_controller
-    modbus_controller_id: senergy_inv
-    name: "Senergy - Dien Ap Luoi (V)"
-    id: grid_voltage
-    address: 0x1000
-    register_type: read
-    value_type: U_WORD
-    accuracy_decimals: 1
-    filters:
-      - multiply: 0.1
-    unit_of_measurement: "V"
+uart:
+  - { id: uart_rs485, tx_pin: GPIO17, rx_pin: GPIO16, baud_rate: 9600 }
+modbus:
+  - { id: modbus_senergy, uart_id: uart_rs485 }
+modbus_controller:
+  - { id: senergy_inv, address: 0x01, modbus_id: modbus_senergy, update_interval: 5s }
 
-  - platform: modbus_controller
-    modbus_controller_id: senergy_inv
-    name: "Senergy - Cong Suat PV1 (W)"
-    id: pv1_power
-    address: 0x100A
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "W"
-
-  - platform: modbus_controller
-    modbus_controller_id: senergy_inv
-    name: "Senergy - Cong Suat Tai (W)"
-    id: load_power
-    address: 0x1018
-    register_type: read
-    value_type: S_WORD
-    unit_of_measurement: "W"
+sensor:
+  - platform: jk_bms_ble
+    jk_bms_ble_id: bms0
+    total_voltage: { name: "Pin - Total Voltage", id: total_voltage }
+    current: { name: "Pin - Current", id: current }
+    power: { name: "Pin - Power" }
+    state_of_charge: { name: "Pin - State of Charge", id: state_of_charge }
+    mosfet_temperature: { name: "Pin - Nhiet Do MOS", id: mos_temp }
+    temperature_sensor_1: { name: "Pin - Temperature 1", id: temp_1 }
+    min_cell_voltage: { name: "Pin - Min Cell Voltage" }
+    max_cell_voltage: { name: "Pin - Max Cell Voltage" }
+    delta_cell_voltage: { name: "Pin - Delta Cell Voltage", id: delta_cell_v }
+    cell_voltage_1: { name: "Pin - Cell 1 Voltage", id: cell_1 }
+    cell_voltage_2: { name: "Pin - Cell 2 Voltage", id: cell_2 }
+    cell_voltage_3: { name: "Pin - Cell 3 Voltage", id: cell_3 }
+    cell_voltage_4: { name: "Pin - Cell 4 Voltage", id: cell_4 }
+    cell_voltage_5: { name: "Pin - Cell 5 Voltage", id: cell_5 }
+    cell_voltage_6: { name: "Pin - Cell 6 Voltage", id: cell_6 }
+    cell_voltage_7: { name: "Pin - Cell 7 Voltage", id: cell_7 }
+    cell_voltage_8: { name: "Pin - Cell 8 Voltage", id: cell_8 }
+  - { platform: modbus_controller, modbus_controller_id: senergy_inv, name: "Senergy - Dien Ap Luoi (V)", id: grid_voltage, address: 0x1000, register_type: read, value_type: U_WORD, accuracy_decimals: 1, filters: [{ multiply: 0.1 }], unit_of_measurement: "V" }
+  - { platform: modbus_controller, modbus_controller_id: senergy_inv, name: "Senergy - Cong Suat PV1 (W)", id: pv1_power, address: 0x100A, register_type: read, value_type: U_WORD, unit_of_measurement: "W" }
+  - { platform: modbus_controller, modbus_controller_id: senergy_inv, name: "Senergy - Cong Suat Tai (W)", id: load_power, address: 0x1018, register_type: read, value_type: S_WORD, unit_of_measurement: "W" }
 
 switch:
   - platform: jk_bms_ble
     jk_bms_ble_id: bms0
-    charging:
-      name: "Pin - Cong Tac Sac BMS"
-      id: bms_charge_sw
-    discharging:
-      name: "Pin - Cong Tac Xa BMS"
-      id: bms_discharge_sw
-    balancer:
-      name: "Pin - Can Bang Cell"
-
-  - platform: modbus_controller
-    modbus_controller_id: senergy_inv
-    name: "Senergy - Cho Phep Day Luoi"
-    id: senergy_export_sw
-    address: 0x2014
-    register_type: holding
-    bitmask: 1
+    charging: { name: "Pin - Cong Tac Sac BMS", id: bms_charge_sw }
+    discharging: { name: "Pin - Cong Tac Xa BMS", id: bms_discharge_sw }
+    balancer: { name: "Pin - Can Bang Cell" }
+  - { platform: modbus_controller, modbus_controller_id: senergy_inv, name: "Senergy - Cho Phep Day Luoi", id: senergy_export_sw, address: 0x2014, register_type: holding, bitmask: 1 }
 
 number:
   - platform: jk_bms_ble
     jk_bms_ble_id: bms0
-    total_battery_capacity:
-      name: "Pin - Dung Luong (Ah)"
-    max_charge_current:
-      name: "Pin - Dong Sac Toi Da BMS (A)"
-    max_discharge_current:
-      name: "Pin - Dong Xa Toi Da BMS (A)"
-
-  - platform: template
-    name: "CAN - Dien Ap Sac (V)"
-    id: can_charge_v
-    optimistic: true
-    min_value: 25.0
-    max_value: 29.2
-    step: 0.1
-    initial_value: 28.4
-    restore_value: true
-
-  - platform: template
-    name: "CAN - Dien Ap Xa (V)"
-    id: can_discharge_v
-    optimistic: true
-    min_value: 22.0
-    max_value: 26.5
-    step: 0.1
-    initial_value: 25.2
-    restore_value: true
-
-  - platform: template
-    name: "CAN - Dong Sac Toi Da (A)"
-    id: can_charge_i
-    optimistic: true
-    min_value: 0
-    max_value: 100
-    step: 1
-    initial_value: 60
-    restore_value: true
-
-  - platform: template
-    name: "CAN - Dong Xa Toi Da (A)"
-    id: can_discharge_i
-    optimistic: true
-    min_value: 0
-    max_value: 150
-    step: 1
-    initial_value: 75
-    restore_value: true
-
-  - platform: modbus_controller
-    modbus_controller_id: senergy_inv
-    name: "Senergy - Cong Suat Day Luoi (W)"
-    id: senergy_export_limit
-    address: 0x2015
-    register_type: holding
-    value_type: U_WORD
-    min_value: 0
-    max_value: 4000
-    step: 50
-    unit_of_measurement: "W"
+    total_battery_capacity: { name: "Pin - Dung Luong (Ah)" }
+    max_charge_current: { name: "Pin - Dong Sac Toi Da BMS (A)" }
+    max_discharge_current: { name: "Pin - Dong Xa Toi Da BMS (A)" }
+  - { platform: template, name: "CAN - Dien Ap Sac (V)", id: can_charge_v, optimistic: true, min_value: 25.0, max_value: 29.2, step: 0.1, initial_value: 28.4, restore_value: true }
+  - { platform: template, name: "CAN - Dien Ap Xa (V)", id: can_discharge_v, optimistic: true, min_value: 22.0, max_value: 26.5, step: 0.1, initial_value: 25.2, restore_value: true }
+  - { platform: template, name: "CAN - Dong Sac Toi Da (A)", id: can_charge_i, optimistic: true, min_value: 0, max_value: 100, step: 1, initial_value: 60, restore_value: true }
+  - { platform: template, name: "CAN - Dong Xa Toi Da (A)", id: can_discharge_i, optimistic: true, min_value: 0, max_value: 150, step: 1, initial_value: 75, restore_value: true }
+  - { platform: modbus_controller, modbus_controller_id: senergy_inv, name: "Senergy - Cong Suat Day Luoi (W)", id: senergy_export_limit, address: 0x2015, register_type: holding, value_type: U_WORD, min_value: 0, max_value: 4000, step: 50, unit_of_measurement: "W" }
