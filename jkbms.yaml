@@ -25,6 +25,10 @@ wifi:
 
 captive_portal:
 
+http_request:
+  useragent: esphome/device
+  timeout: 5s
+
 esp32_ble_tracker:
 
 ble_client:
@@ -88,6 +92,7 @@ sensor:
   - platform: modbus_controller
     modbus_controller_id: senergy_inverter
     name: "Senergy - Cong Suat PV1 (W)"
+    id: senergy_pv1
     register_type: read
     address: 0x1004
     unit_of_measurement: "W"
@@ -96,6 +101,7 @@ sensor:
   - platform: modbus_controller
     modbus_controller_id: senergy_inverter
     name: "Senergy - Cong Suat PV2 (W)"
+    id: senergy_pv2
     register_type: read
     address: 0x1005
     unit_of_measurement: "W"
@@ -104,6 +110,7 @@ sensor:
   - platform: modbus_controller
     modbus_controller_id: senergy_inverter
     name: "Senergy - Dien Ap Luoi (V)"
+    id: senergy_grid_v
     register_type: read
     address: 0x1008
     unit_of_measurement: "V"
@@ -114,6 +121,7 @@ sensor:
   - platform: modbus_controller
     modbus_controller_id: senergy_inverter
     name: "Senergy - Cong Suat Tai (W)"
+    id: senergy_load_w
     register_type: read
     address: 0x1010
     unit_of_measurement: "W"
@@ -122,10 +130,24 @@ sensor:
   - platform: modbus_controller
     modbus_controller_id: senergy_inverter
     name: "Senergy - Cong Suat Luoi (W)"
+    id: senergy_grid_w
     register_type: read
     address: 0x1012
     unit_of_measurement: "W"
     value_type: S_WORD
+
+select:
+  # --- CHỌN CHẾ ĐỘ LÀM VIỆC BIẾN TẦN SENERGY ---
+  - platform: modbus_controller
+    modbus_controller_id: senergy_inverter
+    name: "Senergy - Che Do Lam Viec"
+    address: 0x2100
+    value_type: U_WORD
+    optionsmap:
+      "0 - Tu Dung (Self-Use)": 0
+      "1 - Uu Tien Day Luoi": 1
+      "2 - Hen Gio Sac Xa": 2
+      "3 - Du Phong (Backup)": 3
 
 number:
   # --- CHỈNH ÁP & DÒNG SẠC XẢ GỬI QUA CAN PYLONTECH ---
@@ -169,7 +191,34 @@ number:
     optimistic: true
     restore_value: true
 
-  # --- CÀI ĐẶT TRỰC TIẾP TRÊN BIẾN TẦN SENERGY (RS485) ---
+  # --- CÀI ĐẶT CÔNG SUẤT HÒA LƯỚI & SẠC/XẢ SENERGY ---
+  - platform: modbus_controller
+    modbus_controller_id: senergy_inverter
+    name: "Senergy - Cong Suat Hoa Luoi (W)"
+    address: 0x2001
+    value_type: U_WORD
+    min_value: 0
+    max_value: 4000
+    step: 50
+
+  - platform: modbus_controller
+    modbus_controller_id: senergy_inverter
+    name: "Senergy - Cong Suat Sac Luoi (W)"
+    address: 0x2106
+    value_type: U_WORD
+    min_value: 0
+    max_value: 4000
+    step: 50
+
+  - platform: modbus_controller
+    modbus_controller_id: senergy_inverter
+    name: "Senergy - Cong Suat Xa Pin (W)"
+    address: 0x2107
+    value_type: U_WORD
+    min_value: 0
+    max_value: 4000
+    step: 50
+
   - platform: modbus_controller
     modbus_controller_id: senergy_inverter
     name: "Senergy - Gioi Han Dong Sac (A)"
@@ -188,6 +237,51 @@ number:
     min_value: 5
     max_value: 90
     step: 1
+
+  # --- CÀI ĐẶT KHUNG GIỜ SẠC / XẢ (NHẬP GIỜ CHẴN 0-23H) ---
+  - platform: modbus_controller
+    modbus_controller_id: senergy_inverter
+    name: "Senergy - Gio Bat Dau Sac (h)"
+    address: 0x2102
+    value_type: U_WORD
+    min_value: 0
+    max_value: 23
+    step: 1
+    lambda: "return (x >> 8) & 0xFF;"
+    write_lambda: "return ((uint16_t)x << 8);"
+
+  - platform: modbus_controller
+    modbus_controller_id: senergy_inverter
+    name: "Senergy - Gio Ket Thuc Sac (h)"
+    address: 0x2103
+    value_type: U_WORD
+    min_value: 0
+    max_value: 23
+    step: 1
+    lambda: "return (x >> 8) & 0xFF;"
+    write_lambda: "return ((uint16_t)x << 8);"
+
+  - platform: modbus_controller
+    modbus_controller_id: senergy_inverter
+    name: "Senergy - Gio Bat Dau Xa (h)"
+    address: 0x2104
+    value_type: U_WORD
+    min_value: 0
+    max_value: 23
+    step: 1
+    lambda: "return (x >> 8) & 0xFF;"
+    write_lambda: "return ((uint16_t)x << 8);"
+
+  - platform: modbus_controller
+    modbus_controller_id: senergy_inverter
+    name: "Senergy - Gio Ket Thuc Xa (h)"
+    address: 0x2105
+    value_type: U_WORD
+    min_value: 0
+    max_value: 23
+    step: 1
+    lambda: "return (x >> 8) & 0xFF;"
+    write_lambda: "return ((uint16_t)x << 8);"
 
   # --- CÀI ĐẶT TRÊN MẠCH JK BMS ---
   - platform: jk_bms_ble
@@ -214,6 +308,13 @@ switch:
     address: 0x2000
     bitmask: 1
 
+  - platform: modbus_controller
+    modbus_controller_id: senergy_inverter
+    name: "Senergy - Lap Lai Hen Gio Hang Ngay"
+    register_type: holding
+    address: 0x2101
+    bitmask: 1
+
 canbus:
   - platform: esp32_can
     tx_pin: GPIO5
@@ -223,6 +324,7 @@ canbus:
     id: my_canbus
 
 interval:
+  # --- GỬI DỮ LIỆU CAN PYLONTECH MỖI 1 GIÂY ---
   - interval: 1s
     then:
       - lambda: |-
@@ -262,3 +364,18 @@ interval:
 
           std::vector<uint8_t> data_35e = {'P', 'Y', 'L', 'O', 'N', ' ', ' ', ' '};
           id(my_canbus).send_data(0x35E, false, data_35e);
+
+  # --- ĐẨY THÔNG SỐ LÊN BLYNK MIỄN PHÍ MỖI 10 GIÂY ---
+  - interval: 10s
+    then:
+      - http_request.get:
+          url: !lambda |-
+            char url[320];
+            snprintf(url, sizeof(url),
+              "http://blynk.cloud",
+              isnan(id(bms_voltage).state) ? 0.0 : id(bms_voltage).state,
+              isnan(id(bms_current).state) ? 0.0 : id(bms_current).state,
+              isnan(id(bms_soc).state) ? 0.0 : id(bms_soc).state,
+              isnan(id(senergy_pv1).state) ? 0.0 : id(senergy_pv1).state,
+              isnan(id(senergy_pv2).state) ? 0.0 : id(senergy_pv2).state,
+              isnan(id(senergy_grid_v).state) ? 0.0 : id(senergy_grid_v).state,
