@@ -1,7 +1,6 @@
 substitutions:
   name: jkbms-senergy
   jk_bms_mac: "C8:47:8C:10:79:7A"
-  blynk_token: "YApwHwb_atq5PAiQzC-0qHsb74EPLW6e"
 
 esphome:
   name: ${name}
@@ -26,7 +25,7 @@ captive_portal:
 
 web_server:
   port: 80
-  version: 3
+  version: 2
 
 http_request:
   useragent: esphome/device
@@ -252,7 +251,7 @@ interval:
           then:
             - http_request.get:
                 url: !lambda |-
-                  std::string u = "http://blynk.cloud{blynk_token}";
+                  std::string u = "http://blynk.cloud";
                   u += "&V0=" + to_string((int)(isnan(id(state_of_charge).state) ? 0 : id(state_of_charge).state));
                   u += "&V1=" + str_sprintf("%.2f", isnan(id(total_voltage).state) ? 0.0f : id(total_voltage).state);
                   u += "&V2=" + str_sprintf("%.1f", isnan(id(current).state) ? 0.0f : id(current).state);
@@ -272,7 +271,7 @@ interval:
           then:
             - http_request.get:
                 url: !lambda |-
-                  std::string u = "http://blynk.cloud{blynk_token}";
+                  std::string u = "http://blynk.cloud";
                   u += "&V11=" + str_sprintf("%.3f", isnan(id(cell_1).state) ? 0.0f : id(cell_1).state);
                   u += "&V12=" + str_sprintf("%.3f", isnan(id(cell_2).state) ? 0.0f : id(cell_2).state);
                   u += "&V13=" + str_sprintf("%.3f", isnan(id(cell_3).state) ? 0.0f : id(cell_3).state);
@@ -289,7 +288,7 @@ interval:
           condition: wifi.connected
           then:
             - http_request.get:
-                url: "http://blynk.cloud{blynk_token}&V6"
+                url: "http://blynk.cloud"
                 capture_response: true
                 on_response:
                   then:
@@ -299,4 +298,3 @@ interval:
                           if (val >= 0 && val <= 4000 && val != id(senergy_export_limit).state) {
                             auto call = id(senergy_export_limit).make_call(); call.set_value(val); call.perform();
                           }
-                        }
