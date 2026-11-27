@@ -22,8 +22,8 @@ wifi:
     static_ip: 192.168.1.200
     gateway: 192.168.1.1
     subnet: 255.255.255.0
-    dns1:8.8.8.8
-    dns2:1.1.1.1
+    dns1: 8.8.8.8
+    dns2: 1.1.1.1
   ap:
     ssid: "JK-BMS-Fallback"
     password: "12345678"
@@ -137,6 +137,7 @@ interval:
                   u += "&V8=" + str_sprintf("%.1f", isnan(id(mos_temp).state) ? 0.0f : id(mos_temp).state);
                   u += "&V9=" + str_sprintf("%.1f", isnan(id(temp_1).state) ? 0.0f : id(temp_1).state);
                   u += "&V10=" + str_sprintf("%.3f", isnan(id(delta_cell_v).state) ? 0.0f : id(delta_cell_v).state);
+                  u += "&V19=" + str_sprintf("%.1f", isnan(id(rem_capacity).state) ? 0.0f : id(rem_capacity).state);
                   return u;
 
   - interval: 8s
@@ -241,6 +242,7 @@ sensor:
     current: { name: "Pin - Current", id: current }
     power: { name: "Pin - Power" }
     state_of_charge: { name: "Pin - State of Charge", id: state_of_charge }
+    capacity_remaining: { name: "Pin - Dung Luong Con Lai (Ah)", id: rem_capacity }
     mosfet_temperature: { name: "Pin - Nhiet Do MOS", id: mos_temp }
     temperature_sensor_1: { name: "Pin - Temperature 1", id: temp_1 }
     min_cell_voltage: { name: "Pin - Min Cell Voltage" }
