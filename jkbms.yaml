@@ -1,7 +1,7 @@
 substitutions:
   name: jkbms-senergy
   jk_bms_mac: "C8:47:8C:10:79:7A"
-  blynk_token: "DAN_MA_BLYNK_AUTH_TOKEN_CUA_BAN_VAO_DAY"
+  blynk_token: "YApwHwb_atq5PAiQzC-0qHsb74EPLW6e"
 
 esphome:
   name: ${name}
@@ -34,7 +34,8 @@ web_server:
   version: 2
 http_request:
   useragent: esphome/device
-  timeout: 3s
+  timeout: 5s
+  verify_ssl: false
 ota:
   platform: esphome
 
@@ -127,7 +128,7 @@ interval:
           then:
             - http_request.get:
                 url: !lambda |-
-                  std::string u = "http://blynk.cloud{blynk_token}";
+                  std::string u = "https://blynk.cloud{blynk_token}";
                   u += "&V0=" + to_string((int)(isnan(id(state_of_charge).state) ? 0 : id(state_of_charge).state));
                   u += "&V1=" + str_sprintf("%.2f", isnan(id(total_voltage).state) ? 0.0f : id(total_voltage).state);
                   u += "&V2=" + str_sprintf("%.1f", isnan(id(current).state) ? 0.0f : id(current).state);
@@ -147,7 +148,7 @@ interval:
           then:
             - http_request.get:
                 url: !lambda |-
-                  std::string u = "http://blynk.cloud{blynk_token}";
+                  std::string u = "https://blynk.cloud{blynk_token}";
                   u += "&V11=" + str_sprintf("%.3f", isnan(id(cell_1).state) ? 0.0f : id(cell_1).state);
                   u += "&V12=" + str_sprintf("%.3f", isnan(id(cell_2).state) ? 0.0f : id(cell_2).state);
                   u += "&V13=" + str_sprintf("%.3f", isnan(id(cell_3).state) ? 0.0f : id(cell_3).state);
@@ -163,7 +164,7 @@ interval:
           condition: wifi.connected
           then:
             - http_request.get:
-                url: "http://blynk.cloud{blynk_token}&V6"
+                url: "https://blynk.cloud{blynk_token}&V6"
                 capture_response: true
                 on_response:
                   then:
@@ -175,7 +176,7 @@ interval:
                           }
                         }
             - http_request.get:
-                url: "http://blynk.cloud{blynk_token}&V5"
+                url: "https://blynk.cloud{blynk_token}&V5"
                 capture_response: true
                 on_response:
                   then:
@@ -192,7 +193,7 @@ interval:
           condition: wifi.connected
           then:
             - http_request.get:
-                url: "http://blynk.cloud{blynk_token}&V22"
+                url: "https://blynk.cloud{blynk_token}&V22"
                 capture_response: true
                 on_response:
                   then:
@@ -204,7 +205,7 @@ interval:
                           }
                         }
             - http_request.get:
-                url: "http://blynk.cloud{blynk_token}&V23"
+                url: "https://blynk.cloud{blynk_token}&V23"
                 capture_response: true
                 on_response:
                   then:
@@ -216,7 +217,7 @@ interval:
                           }
                         }
             - http_request.get:
-                url: "http://blynk.cloud{blynk_token}&V24"
+                url: "https://blynk.cloud{blynk_token}&V24"
                 capture_response: true
                 on_response:
                   then:
