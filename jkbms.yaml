@@ -1,7 +1,7 @@
 substitutions:
   name: jkbms-senergy
   jk_bms_mac: "C8:47:8C:10:79:7A"
-  blynk_token: "YApwHwb_atq5PAiQzC-OqHsb74EPLW6e"
+  blynk_token: "DAN_MA_BLYNK_AUTH_TOKEN_CUA_BAN_VAO_DAY"
 
 esphome:
   name: ${name}
@@ -17,10 +17,18 @@ logger:
 wifi:
   ssid: "TUAN BIEN"
   password: "76767676"
+  reboot_timeout: 0s
   manual_ip:
     static_ip: 192.168.1.200
     gateway: 192.168.1.1
     subnet: 255.255.255.0
+
+  # Điểm phát WiFi dự phòng tự kích hoạt khi mất mạng nhà
+  ap:
+    ssid: "JK-BMS-Fallback"
+    password: "12345678"
+
+captive_portal:
 
 web_server:
   port: 80
@@ -28,7 +36,7 @@ web_server:
 
 http_request:
   useragent: esphome/device
-  timeout: 5s
+  timeout: 3s
 
 ota:
   platform: esphome
@@ -65,9 +73,9 @@ canbus:
     bit_rate: 500kbps
 
 interval:
+  # Gửi dữ liệu CAN sang biến tần mỗi 1 giây (Chạy độc lập kể cả khi mất WiFi)
   - interval: 1s
     then:
-      # Gói 0x351: Giới hạn Áp/Dòng Sạc & Xả
       - canbus.send:
           canbus_id: can_bus
           can_id: 0x351
@@ -82,19 +90,12 @@ interval:
               (uint8_t)(di & 0xFF), (uint8_t)(di >> 8),
               (uint8_t)(dv & 0xFF), (uint8_t)(dv >> 8)
             };
-      # Gói 0x355: SOC (%) & SOH (%)
       - canbus.send:
           canbus_id: can_bus
           can_id: 0x355
           data: !lambda |-
             uint16_t soc = isnan(id(state_of_charge).state) ? 50 : (uint16_t)id(state_of_charge).state;
-            uint16_t soh = 100;
-            return {
-              (uint8_t)(soc & 0xFF), (uint8_t)(soc >> 8),
-              (uint8_t)(soh & 0xFF), (uint8_t)(soh >> 8),
-              0x00, 0x00, 0x00, 0x00
-            };
-      # Gói 0x356: Điện áp thực tế, Dòng điện thực tế, Nhiệt độ
+            return {(uint8_t)(soc & 0xFF), (uint8_t)(soc >> 8), 100, 0, 0, 0, 0, 0};
       - canbus.send:
           canbus_id: can_bus
           can_id: 0x356
@@ -105,36 +106,149 @@ interval:
             return {
               (uint8_t)(v & 0xFF), (uint8_t)(v >> 8),
               (uint8_t)(i & 0xFF), (uint8_t)(i >> 8),
-              (uint8_t)(t & 0xFF), (uint8_t)(t >> 8),
-              0x00, 0x00
+              (uint8_t)(t & 0xFF), (uint8_t)(t >> 8), 0, 0
             };
-      # Gói 0x35C: Cho phép Sạc & Xả
       - canbus.send:
           canbus_id: can_bus
           can_id: 0x35C
           data: [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-      # Gói 0x35E: Tên giao thức PYLON
       - canbus.send:
           canbus_id: can_bus
           can_id: 0x35E
           data: [0x50, 0x59, 0x4C, 0x4F, 0x4E, 0x20, 0x20, 0x20]
 
-  # Gửi dữ liệu lên Blynk mỗi 5 giây để xem qua 4G
+  # Đẩy thông số lên App Blynk mỗi 5 giây (Chỉ chạy khi có WiFi)
   - interval: 5s
     then:
-      - http_request.get:
-          url: !lambda |-
-            char buf[256];
-            snprintf(buf, sizeof(buf),
-              "http://blynk.cloud{blynk_token}&V0=%.2f&V1=%.1f&V2=%.0f&V3=%.0f&V4=%.0f&V5=%.0f",
-              isnan(id(total_voltage).state) ? 0.0 : id(total_voltage).state,
-              isnan(id(current).state) ? 0.0 : id(current).state,
-              isnan(id(state_of_charge).state) ? 0.0 : id(state_of_charge).state,
-              isnan(id(pv1_power).state) ? 0.0 : id(pv1_power).state,
-              isnan(id(pv2_power).state) ? 0.0 : id(pv2_power).state,
-              isnan(id(load_power).state) ? 0.0 : id(load_power).state
-            );
-            return std::string(buf);
+      - if:
+          condition:
+            wifi.connected:
+          then:
+            - http_request.get:
+                url: !lambda |-
+                  char buf[350];
+                  float soc = isnan(id(state_of_charge).state) ? 0 : id(state_of_charge).state;
+                  float v = isnan(id(total_voltage).state) ? 0 : id(total_voltage).state;
+                  float i = isnan(id(current).state) ? 0 : id(current).state;
+                  float pv1 = isnan(id(pv1_power).state) ? 0 : id(pv1_power).state;
+                  float load = isnan(id(load_power).state) ? 0 : id(load_power).state;
+                  float grid_v = isnan(id(grid_voltage).state) ? 0 : id(grid_voltage).state;
+                  float mos_t = isnan(id(mos_temp).state) ? 0 : id(mos_temp).state;
+                  float bat_t = isnan(id(temp_1).state) ? 0 : id(temp_1).state;
+                  float delta_v = isnan(id(delta_cell_v).state) ? 0 : id(delta_cell_v).state;
+                  snprintf(buf, sizeof(buf),
+                    "http://blynk.cloud{blynk_token}&V0=%.0f&V1=%.2f&V2=%.1f&V3=%.0f&V4=%.0f&V7=%.1f&V8=%.1f&V9=%.1f&V10=%.3f",
+                    soc, v, i, pv1, load, grid_v, mos_t, bat_t, delta_v);
+                  return std::string(buf);
+
+  # Đẩy điện áp 8 Cell lên App Blynk mỗi 8 giây (Chỉ chạy khi có WiFi)
+  - interval: 8s
+    then:
+      - if:
+          condition:
+            wifi.connected:
+          then:
+            - http_request.get:
+                url: !lambda |-
+                  char buf[350];
+                  float c1 = isnan(id(cell_1).state) ? 0 : id(cell_1).state;
+                  float c2 = isnan(id(cell_2).state) ? 0 : id(cell_2).state;
+                  float c3 = isnan(id(cell_3).state) ? 0 : id(cell_3).state;
+                  float c4 = isnan(id(cell_4).state) ? 0 : id(cell_4).state;
+                  float c5 = isnan(id(cell_5).state) ? 0 : id(cell_5).state;
+                  float c6 = isnan(id(cell_6).state) ? 0 : id(cell_6).state;
+                  float c7 = isnan(id(cell_7).state) ? 0 : id(cell_7).state;
+                  float c8 = isnan(id(cell_8).state) ? 0 : id(cell_8).state;
+                  snprintf(buf, sizeof(buf),
+                    "http://blynk.cloud{blynk_token}&V11=%.3f&V12=%.3f&V13=%.3f&V14=%.3f&V15=%.3f&V16=%.3f&V17=%.3f&V18=%.3f",
+                    c1, c2, c3, c4, c5, c6, c7, c8);
+                  return std::string(buf);
+
+  # Đọc lệnh điều khiển Công suất đẩy lưới (V6) & Bật/Tắt đẩy lưới (V5) từ Blynk
+  - interval: 6s
+    then:
+      - if:
+          condition:
+            wifi.connected:
+          then:
+            - http_request.get:
+                url: "http://blynk.cloud{blynk_token}&V6"
+                capture_response: true
+                on_response:
+                  then:
+                    - lambda: |-
+                        if (response->status_code == 200) {
+                          float val = atof(body.c_str());
+                          if (val >= 0 && val <= 4000 && val != id(senergy_export_limit).state) {
+                            auto call = id(senergy_export_limit).make_call();
+                            call.set_value(val);
+                            call.perform();
+                          }
+                        }
+            - http_request.get:
+                url: "http://blynk.cloud{blynk_token}&V5"
+                capture_response: true
+                on_response:
+                  then:
+                    - lambda: |-
+                        if (response->status_code == 200) {
+                          int sw = atoi(body.c_str());
+                          if (sw == 1 && !id(senergy_export_sw).state) {
+                            id(senergy_export_sw).turn_on();
+                          } else if (sw == 0 && id(senergy_export_sw).state) {
+                            id(senergy_export_sw).turn_off();
+                          }
+                        }
+
+  # Đọc lệnh Thanh trượt Điện áp sạc CAN (V22), Dòng sạc CAN (V23), Dòng xả CAN (V24) từ Blynk
+  - interval: 7s
+    then:
+      - if:
+          condition:
+            wifi.connected:
+          then:
+            - http_request.get:
+                url: "http://blynk.cloud{blynk_token}&V22"
+                capture_response: true
+                on_response:
+                  then:
+                    - lambda: |-
+                        if (response->status_code == 200) {
+                          float val = atof(body.c_str());
+                          if (val >= 25.0 && val <= 29.2 && fabs(val - id(can_charge_v).state) > 0.05) {
+                            auto call = id(can_charge_v).make_call();
+                            call.set_value(val);
+                            call.perform();
+                          }
+                        }
+            - http_request.get:
+                url: "http://blynk.cloud{blynk_token}&V23"
+                capture_response: true
+                on_response:
+                  then:
+                    - lambda: |-
+                        if (response->status_code == 200) {
+                          float val = atof(body.c_str());
+                          if (val >= 0 && val <= 100 && val != id(can_charge_i).state) {
+                            auto call = id(can_charge_i).make_call();
+                            call.set_value(val);
+                            call.perform();
+                          }
+                        }
+            - http_request.get:
+                url: "http://blynk.cloud{blynk_token}&V24"
+                capture_response: true
+                on_response:
+                  then:
+                    - lambda: |-
+                        if (response->status_code == 200) {
+                          float val = atof(body.c_str());
+                          if (val >= 0 && val <= 150 && val != id(can_discharge_i).state) {
+                            auto call = id(can_discharge_i).make_call();
+                            call.set_value(val);
+                            call.perform();
+                          }
+                        }
 
 # ==========================================
 # 3. GIAO TIẾP RS485 VỚI BIẾN TẦN SENERGY
@@ -156,185 +270,3 @@ modbus_controller:
     update_interval: 5s
 
 # ==========================================
-# 4. CẢM BIẾN HIỂN THỊ (JK BMS + SENERGY)
-# ==========================================
-sensor:
-  - platform: jk_bms_ble
-    jk_bms_ble_id: bms0
-    total_voltage:
-      name: "Pin - Total Voltage"
-      id: total_voltage
-    current:
-      name: "Pin - Current"
-      id: current
-    power:
-      name: "Pin - Power"
-    state_of_charge:
-      name: "Pin - State of Charge"
-      id: state_of_charge
-    mosfet_temperature:
-      name: "Pin - Nhiet Do MOS"
-    temperature_sensor_1:
-      name: "Pin - Temperature 1"
-      id: temp_1
-    temperature_sensor_2:
-      name: "Pin - Temperature 2"
-    min_cell_voltage:
-      name: "Pin - Min Cell Voltage"
-    max_cell_voltage:
-      name: "Pin - Max Cell Voltage"
-    delta_cell_voltage:
-      name: "Pin - Delta Cell Voltage"
-    cell_voltage_1:
-      name: "Pin - Cell 1 Voltage"
-    cell_voltage_2:
-      name: "Pin - Cell 2 Voltage"
-    cell_voltage_3:
-      name: "Pin - Cell 3 Voltage"
-    cell_voltage_4:
-      name: "Pin - Cell 4 Voltage"
-    cell_voltage_5:
-      name: "Pin - Cell 5 Voltage"
-    cell_voltage_6:
-      name: "Pin - Cell 6 Voltage"
-    cell_voltage_7:
-      name: "Pin - Cell 7 Voltage"
-    cell_voltage_8:
-      name: "Pin - Cell 8 Voltage"
-
-  - platform: modbus_controller
-    modbus_controller_id: senergy_inv
-    name: "Senergy - Dien Ap Luoi (V)"
-    address: 0x1000
-    register_type: read
-    value_type: U_WORD
-    accuracy_decimals: 1
-    filters:
-      - multiply: 0.1
-    unit_of_measurement: "V"
-
-  - platform: modbus_controller
-    modbus_controller_id: senergy_inv
-    name: "Senergy - Cong Suat PV1 (W)"
-    id: pv1_power
-    address: 0x100A
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "W"
-
-  - platform: modbus_controller
-    modbus_controller_id: senergy_inv
-    name: "Senergy - Cong Suat PV2 (W)"
-    id: pv2_power
-    address: 0x100D
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "W"
-
-  - platform: modbus_controller
-    modbus_controller_id: senergy_inv
-    name: "Senergy - Cong Suat Tai (W)"
-    id: load_power
-    address: 0x1018
-    register_type: read
-    value_type: S_WORD
-    unit_of_measurement: "W"
-
-  - platform: modbus_controller
-    modbus_controller_id: senergy_inv
-    name: "Senergy - Cong Suat Luoi (W)"
-    address: 0x1016
-    register_type: read
-    value_type: S_WORD
-    unit_of_measurement: "W"
-
-# ==========================================
-# 5. CÔNG TẮC BẬT/TẮT
-# ==========================================
-switch:
-  - platform: jk_bms_ble
-    jk_bms_ble_id: bms0
-    charging:
-      name: "Pin - Cong Tac Sac BMS"
-    discharging:
-      name: "Pin - Cong Tac Xa BMS"
-    balancer:
-      name: "Pin - Can Bang Cell"
-
-  - platform: modbus_controller
-    modbus_controller_id: senergy_inv
-    name: "Senergy - Cho Phep Day Luoi"
-    address: 0x2014
-    register_type: holding
-    bitmask: 1
-
-# ==========================================
-# 6. THANH TRƯỢT ĐIỀU CHỈNH (CAN + SENERGY PV)
-# ==========================================
-number:
-  - platform: jk_bms_ble
-    jk_bms_ble_id: bms0
-    total_battery_capacity:
-      name: "Pin - Dung Luong (Ah)"
-    cell_count:
-      name: "Pin - So Cell"
-
-  - platform: template
-    name: "CAN - Ap Sac Toi Da (V)"
-    id: can_charge_v
-    optimistic: true
-    restore_value: true
-    initial_value: 28.4
-    min_value: 24.0
-    max_value: 30.0
-    step: 0.1
-    unit_of_measurement: "V"
-    mode: slider
-
-  - platform: template
-    name: "CAN - Ap Cat Xa (V)"
-    id: can_discharge_v
-    optimistic: true
-    restore_value: true
-    initial_value: 25.0
-    min_value: 20.0
-    max_value: 26.0
-    step: 0.1
-    unit_of_measurement: "V"
-    mode: slider
-
-  - platform: template
-    name: "CAN - Dong Sac Toi Da (A)"
-    id: can_charge_i
-    optimistic: true
-    restore_value: true
-    initial_value: 70
-    min_value: 1
-    max_value: 150
-    step: 1
-    unit_of_measurement: "A"
-    mode: slider
-
-  - platform: template
-    name: "CAN - Dong Xa Toi Da (A)"
-    id: can_discharge_i
-    optimistic: true
-    restore_value: true
-    initial_value: 75
-    min_value: 1
-    max_value: 150
-    step: 1
-    unit_of_measurement: "A"
-    mode: slider
-
-  - platform: modbus_controller
-    modbus_controller_id: senergy_inv
-    name: "Senergy - Cong Suat Day Luoi PV (W)"
-    address: 0x2015
-    register_type: holding
-    value_type: U_WORD
-    min_value: 0
-    max_value: 4000
-    step: 100
-    unit_of_measurement: "W"
-    mode: slider
