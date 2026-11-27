@@ -1,221 +1,116 @@
 substitutions:
-  name: jkbms-monitor
-  friendly_name: "JK BMS Monitor"
-  # Chân kết nối UART với JK BMS
-  uart_tx_pin: GPIO17
-  uart_rx_pin: GPIO16
-  # Chân kết nối CANbus với Inverter
-  can_tx_pin: GPIO05
-  can_rx_pin: GPIO04
-  # Mã bí mật riêng của bạn để xem qua 4G
-  mqtt_topic: "jkbms/pin_qng_839271"
+  name: jkbms-senergy
+  jk_bms_mac: "C8:47:8C:10:79:7A"
+  mqtt_broker: "broker.emqx.io" # Dùng sẵn broker công cộng miễn phí (hoặc đổi sang IP nội bộ của bạn)
 
 esphome:
   name: ${name}
-  friendly_name: ${friendly_name}
 
 esp32:
   board: esp32dev
   framework:
-    type: arduino
-
-# Điền tên và mật khẩu Wi-Fi / cục phát 4G của bạn vào 2 dòng dưới
-wifi:
-  ssid: "TEN_WIFI_CUA_BAN"
-  password: "MAT_KHAU_WIFI"
-  ap:
-    ssid: "JKBMS-Fallback"
-    password: "password123"
-
-captive_portal:
+    type: esp-idf
 
 logger:
   level: INFO
-ota:
-  - platform: esphome
 
-# Giao diện Web v3 xem nội bộ đẹp mắt
+wifi:
+  ssid: "TUAN BIEN"
+  password: "76767676"
+  ap:
+    ssid: "JKBMS-Fallback"
+    password: "12345678"
+
+# 1. Giao diện Web xem trực tiếp không cần mạng Internet
 web_server:
   port: 80
-  version: 3
+  version: 1
 
-# Thư viện JK BMS
+# 2. Kết nối MQTT xem trên App điện thoại
+mqtt:
+  broker: ${mqtt_broker}
+  port: 1883
+  topic_prefix: jkbms_tuanbien_9988 # Đổi số đuôi này thành số bí mật của riêng bạn để tránh trùng người khác
+
+ota:
+  platform: esphome
+
+esp32_ble_tracker:
+  scan_parameters:
+    active: false
+
+ble_client:
+  - mac_address: ${jk_bms_mac}
+    id: client0
+
 external_components:
   - source: github://syssi/esphome-jk-bms@main
-    refresh: 0s
+  - source: github://syssi/esphome-jk-bms-can@main
 
-# Giao tiếp UART với JK BMS
-uart:
-  - id: uart_0
-    baud_rate: 115200
-    rx_buffer_size: 384
-    tx_pin: ${uart_tx_pin}
-    rx_pin: ${uart_rx_pin}
+jk_bms_ble:
+  - ble_client_id: client0
+    protocol_version: JK02_32S
+    throttle: 2s
+    id: bms0
 
-jk_bms:
-  - id: bms0
-    uart_id: uart_0
-    update_interval: 2s
-
-# Giao tiếp CANbus với Inverter (đã sửa lỗi build)
 canbus:
   - platform: esp32_can
-    id: my_canbus
-    tx_pin: ${can_tx_pin}
-    rx_pin: ${can_rx_pin}
-    can_id: 0x351
+    id: can_bus
+    tx_pin: GPIO4
+    rx_pin: GPIO5
     bit_rate: 500kbps
 
-# Kết nối Server 4G miễn phí (không cần tài khoản)
-mqtt:
-  broker: "broker.emqx.io"
-  port: 1883
-  topic_prefix: ${mqtt_topic}
-  discover: false
-  keepalive: 30s
-  reboot_timeout: 15min
+jk_bms_can:
+  - jk_bms_ble_id: bms0
+    canbus_id: can_bus
+    protocol: PYLON
+    update_interval: 1s
+    charge_voltage: 28.4V
+    charge_current_limit: 70A
+    discharge_current_limit: 75A
+    discharge_voltage: 25.0V
 
-# Các thông số Áp - Dòng - Công suất - Cell
 sensor:
-  - platform: jk_bms
-    jk_bms_id: bms0
+  - platform: jk_bms_ble
+    jk_bms_ble_id: bms0
     total_voltage:
-      name: "1. Điện áp tổng"
-      id: bms_total_voltage
-      accuracy_decimals: 2
-      unit_of_measurement: "V"
-      icon: "mdi:flash"
+      name: "Tong dien ap"
+      id: total_voltage
     current:
-      name: "2. Dòng sạc / xả"
-      id: bms_current
-      accuracy_decimals: 2
-      unit_of_measurement: "A"
-      icon: "mdi:current-dc"
+      name: "Dong sac xa"
+      id: current
     power:
-      name: "3. Công suất sạc / xả"
-      id: bms_power
-      accuracy_decimals: 1
-      unit_of_measurement: "W"
-      icon: "mdi:lightning-bolt"
-    capacity_remaining:
-      name: "4. Dung lượng pin (SOC)"
-      id: bms_soc
-      accuracy_decimals: 0
-      unit_of_measurement: "%"
-      icon: "mdi:battery-charging-100"
+      name: "Cong suat"
+    state_of_charge:
+      name: "Phan tram pin"
+      id: state_of_charge
+    power_tube_temperature:
+      name: "Nhiet do MOS"
+      id: mos_temp
+    temperature_sensor_1:
+      name: "Nhiet do pin 1"
+      id: temp_1
     min_cell_voltage:
-      name: "5. Cell thấp nhất"
-      id: bms_min_cell
-      accuracy_decimals: 3
+      name: "Cell thap nhat"
+      id: min_cell_voltage
     max_cell_voltage:
-      name: "6. Cell cao nhất"
-      id: bms_max_cell
-      accuracy_decimals: 3
+      name: "Cell cao nhat"
+      id: max_cell_voltage
     delta_cell_voltage:
-      name: "7. Chênh lệch Cell (Delta)"
-      id: bms_delta_cell
-      accuracy_decimals: 3
+      name: "Do lech cell"
     cell_voltage_1:
-      name: "Cell 01"
+      name: "Cell 1"
     cell_voltage_2:
-      name: "Cell 02"
+      name: "Cell 2"
     cell_voltage_3:
-      name: "Cell 03"
+      name: "Cell 3"
     cell_voltage_4:
-      name: "Cell 04"
+      name: "Cell 4"
     cell_voltage_5:
-      name: "Cell 05"
+      name: "Cell 5"
     cell_voltage_6:
-      name: "Cell 06"
+      name: "Cell 6"
     cell_voltage_7:
-      name: "Cell 07"
+      name: "Cell 7"
     cell_voltage_8:
-      name: "Cell 08"
-    cell_voltage_9:
-      name: "Cell 09"
-    cell_voltage_10:
-      name: "Cell 10"
-    cell_voltage_11:
-      name: "Cell 11"
-    cell_voltage_12:
-      name: "Cell 12"
-    cell_voltage_13:
-      name: "Cell 13"
-    cell_voltage_14:
-      name: "Cell 14"
-    cell_voltage_15:
-      name: "Cell 15"
-    cell_voltage_16:
-      name: "Cell 16"
-
-text_sensor:
-  - platform: template
-    name: "0. Trạng thái hoạt động"
-    id: bms_status_text
-    icon: "mdi:battery-sync"
-    update_interval: 2s
-    lambda: |-
-      float curr = id(bms_current).state;
-      float soc = id(bms_soc).state;
-      if (isnan(curr)) return {"Đang kết nối BMS..."};
-      if (soc >= 100.0 && curr >= -0.2 && curr <= 0.2) return {"Đầy pin 100% (Chế độ chờ)"};
-      if (curr > 0.2) return {"Đang SẠC vào pin"};
-      if (curr < -0.2) return {"Đang XẢ tải"};
-      return {"Đang chờ (Standby)"};
-
-# Gửi dữ liệu sang Inverter (CANbus) và lên điện thoại (4G)
-interval:
-  - interval: 1s
-    then:
-      - lambda: |-
-          if (isnan(id(bms_total_voltage).state) || isnan(id(bms_current).state) || isnan(id(bms_soc).state)) {
-            return;
-          }
-          uint16_t charge_v = 552;
-          int16_t charge_a  = 500;
-          int16_t discharge_a = 500;
-          uint16_t discharge_v = 440;
-          std::vector<uint8_t> data_351 = {
-            (uint8_t)(charge_v & 0xFF), (uint8_t)(charge_v >> 8),
-            (uint8_t)(charge_a & 0xFF), (uint8_t)(charge_a >> 8),
-            (uint8_t)(discharge_a & 0xFF), (uint8_t)(discharge_a >> 8),
-            (uint8_t)(discharge_v & 0xFF), (uint8_t)(discharge_v >> 8)
-          };
-          id(my_canbus).send_data(0x351, false, data_351);
-
-          uint16_t soc = (uint16_t)id(bms_soc).state;
-          uint16_t soh = 100;
-          std::vector<uint8_t> data_355 = {
-            (uint8_t)(soc & 0xFF), (uint8_t)(soc >> 8),
-            (uint8_t)(soh & 0xFF), (uint8_t)(soh >> 8),
-            0x00, 0x00, 0x00, 0x00
-          };
-          id(my_canbus).send_data(0x355, false, data_355);
-
-          int16_t actual_v = (int16_t)(id(bms_total_voltage).state * 100.0f);
-          int16_t actual_a = (int16_t)(id(bms_current).state * 10.0f);
-          int16_t temp = 250;
-          std::vector<uint8_t> data_356 = {
-            (uint8_t)(actual_v & 0xFF), (uint8_t)(actual_v >> 8),
-            (uint8_t)(actual_a & 0xFF), (uint8_t)(actual_a >> 8),
-            (uint8_t)(temp & 0xFF), (uint8_t)(temp >> 8),
-            0x00, 0x00
-          };
-          id(my_canbus).send_data(0x356, false, data_356);
-
-  - interval: 5s
-    then:
-      - mqtt.publish:
-          topic: "${mqtt_topic}/tong_hop"
-          payload: !lambda |-
-            char buf;
-            snprintf(buf, sizeof(buf),
-              "{\"ap\":%.2f,\"dong\":%.2f,\"cong_suat\":%.1f,\"soc\":%.0f,\"delta\":%.3f,\"trang_thai\":\"%s\"}",
-              isnan(id(bms_total_voltage).state) ? 0.0 : id(bms_total_voltage).state,
-              isnan(id(bms_current).state) ? 0.0 : id(bms_current).state,
-              isnan(id(bms_power).state) ? 0.0 : id(bms_power).state,
-              isnan(id(bms_soc).state) ? 0.0 : id(bms_soc).state,
-              isnan(id(bms_delta_cell).state) ? 0.0 : id(bms_delta_cell).state,
-              id(bms_status_text).state.c_str()
-            );
-            return std::string(buf);
+      name: "Cell 8"
