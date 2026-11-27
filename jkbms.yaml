@@ -241,7 +241,7 @@ sensor:
     name: "PV1 Power"
     id: pv1_power
     address: 0x000A
-    register_type: input
+    register_type: read
     value_type: U_WORD
     unit_of_measurement: "W"
 
@@ -250,7 +250,7 @@ sensor:
     name: "Load Power"
     id: load_power
     address: 0x001E
-    register_type: input
+    register_type: read
     value_type: U_WORD
     unit_of_measurement: "W"
 
@@ -259,7 +259,7 @@ sensor:
     name: "Grid Voltage"
     id: grid_voltage
     address: 0x0012
-    register_type: input
+    register_type: read
     value_type: U_WORD
     filters:
       - multiply: 0.1
