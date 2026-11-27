@@ -248,3 +248,23 @@ sensor:
     mosfet_temperature: { name: "Pin - Nhiet Do MOS", id: mos_temp }
     temperature_sensor_1: { name: "Pin - Temperature 1", id: temp_1 }
     min_cell_voltage: { name: "Pin - Min Cell Voltage" }
+  - platform: template
+    name: "CAN - Dong Xa Toi Da (A)"
+    id: can_discharge_i
+    optimistic: true
+    min_value: 0
+    max_value: 150
+    step: 1
+    initial_value: 75
+    restore_value: true
+  - platform: modbus_controller
+    modbus_controller_id: senergy_inv
+    name: "Senergy - Cong Suat Day Luoi (W)"
+    id: senergy_export_limit
+    address: 0x2015
+    register_type: holding
+    value_type: U_WORD
+    min_value: 0
+    max_value: 4000
+    step: 50
+    unit_of_measurement: "W"
