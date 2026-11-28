@@ -11,9 +11,6 @@ esp32:
   board: esp32dev
   framework:
     type: esp-idf
-    sdkconfig_options:
-      CONFIG_MBEDTLS_CERTIFICATE_BUNDLE: "y"
-      CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL: "y"
 
 logger:
   level: INFO
@@ -70,7 +67,8 @@ ota:
 
 http_request:
   useragent: esphome/device
-  timeout: 10s
+  timeout: 15s
+  follow_redirects: true
 
 interval:
   - interval: 10s
@@ -81,7 +79,7 @@ interval:
           then:
             - http_request.get:
                 url: !lambda |-
-                  char buf[520];
+                  char buf[560];
                   float v0 = isnan(id(total_voltage).state) ? 0.0f : id(total_voltage).state;
                   float v1 = isnan(id(current).state) ? 0.0f : id(current).state;
                   float v2 = isnan(id(state_of_charge).state) ? 0.0f : id(state_of_charge).state;
@@ -100,7 +98,7 @@ interval:
                   float c7 = isnan(id(cell_7).state) ? 0.0f : id(cell_7).state;
                   float c8 = isnan(id(cell_8).state) ? 0.0f : id(cell_8).state;
                   snprintf(buf, sizeof(buf),
-                    "https://blynk.cloud/external/api/update?token=${blynk_token}&V0=%.2f&V1=%.2f&V2=%.1f&V3=%.0f&V4=%.0f&V5=%.0f&V6=%.0f&V7=%d&V8=%.1f&V9=%.3f&V10=%.3f&V11=%.3f&V12=%.3f&V13=%.3f&V14=%.3f&V15=%.3f&V16=%.3f",
+                    "http://blynk.cloud/external/api/update?token=${blynk_token}&V0=%.2f&V1=%.2f&V2=%.1f&V3=%.0f&V4=%.0f&V5=%.0f&V6=%.0f&V7=%d&V8=%.1f&V9=%.3f&V10=%.3f&V11=%.3f&V12=%.3f&V13=%.3f&V14=%.3f&V15=%.3f&V16=%.3f",
                     v0, v1, v2, v3, v4, v5, v6, v7, v8, c1, c2, c3, c4, c5, c6, c7, c8
                   );
                   return std::string(buf);
