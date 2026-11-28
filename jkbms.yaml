@@ -27,7 +27,7 @@ wifi:
   ap:
     ssid: "JKBMS-Senergy-Backup"
     password: "12345678"
-web_serer:
+web_server:
   port: 80
   version: 2
 
