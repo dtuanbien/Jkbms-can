@@ -1,8 +1,9 @@
 substitutions:
   name: jkbms-senergy
   jk_bms_mac: "C8:47:8C:10:79:7A"
-  battery_capacity_ah: "280.0" 
+  battery_capacity_ah: "280.0"
   blynk_token: "YApwHwb_atq5PAiQzC-0qHsb74EPLW6e"
+
 esphome:
   name: ${name}
 
