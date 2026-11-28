@@ -1,9 +1,8 @@
 substitutions:
   name: jkbms-senergy
   jk_bms_mac: "C8:47:8C:10:79:7A"
+  battery_capacity_ah: "280.0" 
   blynk_token: "YApwHwb_atq5PAiQzC-0qHsb74EPLW6e"
-  battery_capacity_ah: "280.0"
-
 esphome:
   name: ${name}
 
@@ -15,6 +14,14 @@ esp32:
 logger:
   level: INFO
 
+web_server:
+  port: 80
+  version: 2
+
+ota:
+  - platform: esphome
+  - platform: web_server
+
 wifi:
   ssid: "TUAN BIEN"
   password: "76767676"
@@ -24,6 +31,11 @@ wifi:
     subnet: 255.255.255.0
     dns1: 8.8.8.8
     dns2: 1.1.1.1
+
+http_request:
+  id: blynk_http
+  timeout: 5s
+  verify_ssl: false
 
 time:
   - platform: sntp
@@ -57,56 +69,7 @@ time:
                 else id(discharge_master).turn_off();
               }
 
-web_server:
-  port: 80
-  version: 2
-
-ota:
-  - platform: esphome
-  - platform: web_server
-
-http_request:
-  useragent: esphome/device
-  timeout: 15s
-  follow_redirects: true
-
 interval:
-  - interval: 10s
-    then:
-      - if:
-          condition:
-            wifi.connected:
-          then:
-            - http_request.get:
-                url: !lambda |-
-                  char buf[560];
-                  float v0 = isnan(id(total_voltage).state) ? 0.0f : id(total_voltage).state;
-                  float v1 = isnan(id(current).state) ? 0.0f : id(current).state;
-                  float v2 = isnan(id(state_of_charge).state) ? 0.0f : id(state_of_charge).state;
-                  float v3 = isnan(id(pv_power).state) ? 0.0f : id(pv_power).state;
-                  float v4 = isnan(id(grid_power).state) ? 0.0f : id(grid_power).state;
-                  float v5 = isnan(id(load_power).state) ? 0.0f : id(load_power).state;
-                  float v6 = isnan(id(bat_power).state) ? 0.0f : id(bat_power).state;
-                  int v7 = id(discharge_master).state ? 1 : 0;
-                  float v8 = isnan(id(remaining_ah).state) ? 0.0f : id(remaining_ah).state;
-                  float c1 = isnan(id(cell_1).state) ? 0.0f : id(cell_1).state;
-                  float c2 = isnan(id(cell_2).state) ? 0.0f : id(cell_2).state;
-                  float c3 = isnan(id(cell_3).state) ? 0.0f : id(cell_3).state;
-                  float c4 = isnan(id(cell_4).state) ? 0.0f : id(cell_4).state;
-                  float c5 = isnan(id(cell_5).state) ? 0.0f : id(cell_5).state;
-                  float c6 = isnan(id(cell_6).state) ? 0.0f : id(cell_6).state;
-                  float c7 = isnan(id(cell_7).state) ? 0.0f : id(cell_7).state;
-                  float c8 = isnan(id(cell_8).state) ? 0.0f : id(cell_8).state;
-                  snprintf(buf, sizeof(buf),
-                    "http://blynk.cloud/external/api/update?token=${blynk_token}&V0=%.2f&V1=%.2f&V2=%.1f&V3=%.0f&V4=%.0f&V5=%.0f&V6=%.0f&V7=%d&V8=%.1f&V9=%.3f&V10=%.3f&V11=%.3f&V12=%.3f&V13=%.3f&V14=%.3f&V15=%.3f&V16=%.3f",
-                    v0, v1, v2, v3, v4, v5, v6, v7, v8, c1, c2, c3, c4, c5, c6, c7, c8
-                  );
-                  return std::string(buf);
-                on_response:
-                  then:
-                    - lambda: |-
-                        ESP_LOGI("blynk", "HTTP status: %d", response->status_code);
-
   - interval: 1s
     then:
       - lambda: |-
@@ -150,6 +113,25 @@ interval:
           id(can_bus).send_data(0x359, false, d359);
           id(can_bus).send_data(0x35C, false, d35c);
           id(can_bus).send_data(0x35E, false, d35e);
+
+  - interval: 5s
+    then:
+      - lambda: |-
+          if (id(blynk_http).is_ready()) {
+            char url[384];
+            float soc = isnan(id(state_of_charge).state) ? 0.0f : id(state_of_charge).state;
+            float v_bat = isnan(id(total_voltage).state) ? 0.0f : id(total_voltage).state;
+            float i_bat = isnan(id(current).state) ? 0.0f : id(current).state;
+            float pv = isnan(id(pv_power).state) ? 0.0f : id(pv_power).state;
+            float grid = isnan(id(grid_power).state) ? 0.0f : id(grid_power).state;
+            float load = isnan(id(load_power).state) ? 0.0f : id(load_power).state;
+            float ah_rem = isnan(id(remaining_ah).state) ? 0.0f : id(remaining_ah).state;
+            float delta_mv = isnan(id(delta_cell_voltage).state) ? 0.0f : (id(delta_cell_voltage).state * 1000.0f);
+            snprintf(url, sizeof(url),
+                     "http://blynk.cloud/external/api/batch/update?token=${blynk_token}&v0=%.1f&v1=%.2f&v2=%.1f&v3=%.0f&v4=%.0f&v5=%.0f&v6=%.1f&v7=%.0f",
+                     soc, v_bat, i_bat, pv, grid, load, ah_rem, delta_mv);
+            id(blynk_http).post(url, "");
+          }
 
 esp32_ble_tracker:
   scan_parameters:
