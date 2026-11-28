@@ -11,9 +11,6 @@ esp32:
   board: esp32dev
   framework:
     type: esp-idf
-    advanced:
-      最小_free_heap_size: 32768
-      compiler_optimization: perf
     sdkconfig_options:
       CONFIG_MBEDTLS_CERTIFICATE_BUNDLE: "y"
       CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL: "y"
