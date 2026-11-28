@@ -9,7 +9,7 @@ esphome:
 esp32:
   board: esp32dev
   framework:
-    type: esp-idf
+    type: arduino#
 
 logger:
   level: INFO
@@ -18,11 +18,12 @@ wifi:
   networks:
     - ssid: "TUAN BIEN"
       password: "76767676"
-      priority: 10
+      power_seve_mode
       manual_ip:
-        static_ip: 192.168.1.200
+        static_ip: 192.168.10.200
         gateway: 192.168.10.1
         subnet: 255.255.255.0
+        dns1: 8.8.8.8
         
   ap:
     ssid: "JKBMS-Senergy-Backup"
