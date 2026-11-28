@@ -11,6 +11,12 @@ esp32:
   board: esp32dev
   framework:
     type: esp-idf
+    advanced:
+      最小_free_heap_size: 32768
+      compiler_optimization: perf
+    sdkconfig_options:
+      CONFIG_MBEDTLS_CERTIFICATE_BUNDLE: "y"
+      CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL: "y"
 
 logger:
   level: INFO
@@ -109,7 +115,7 @@ interval:
   - interval: 1s
     then:
       - lambda: |-
-          uint16_t chg_v = 284;
+          uint16_t chg_v = (uint16_t)(id(set_charge_volt).state * 10);
           uint16_t chg_i = (uint16_t)(id(set_charge_current).state * 10);
           uint16_t dis_i = id(discharge_master).state ? (uint16_t)(id(set_discharge_current).state * 10) : 0;
           uint16_t dis_v = (uint16_t)(id(set_cutoff_volt).state * 10);
@@ -247,6 +253,17 @@ binary_sensor:
       - button.press: btn_toggle_bms
 
 number:
+  - platform: template
+    name: "Dien ap sac (V)"
+    id: set_charge_volt
+    min_value: 26.0
+    max_value: 29.2
+    step: 0.1
+    initial_value: 28.4
+    optimistic: true
+    restore_value: true
+    unit_of_measurement: "V"
+
   - platform: template
     name: "Dong Sac toi da (A)"
     id: set_charge_current
