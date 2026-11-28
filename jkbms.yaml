@@ -23,17 +23,10 @@ wifi:
         static_ip: 192.168.10.200
         gateway: 192.168.10.1
         subnet: 255.255.255.0
-    - ssid: "VUNGO"
-      password: "1234567890"
-      priority: 5
-    - ssid: "Quang Tho"
-      password: "12345678"
       priority: 3
   ap:
     ssid: "JKBMS-Senergy-Backup"
     password: "12345678"
-
-captive_portal:
 
 time:
   - platform: sntp
@@ -68,10 +61,11 @@ time:
 
 web_server:
   port: 80
-  version: 2
+  version: 3
+  local: true
 
 ota:
-  - platform: esphome
+  platform: esphome
 
 http_request:
   useragent: esphome/device
@@ -94,7 +88,7 @@ interval:
                   int v5 = isnan(id(load_power).state) ? 0 : (int)id(load_power).state;
                   int v6 = isnan(id(bat_power).state) ? 0 : (int)id(bat_power).state;
                   int v7 = id(discharge_master).state ? 1 : 0;
-                  return std::string("http://blynk.cloud/external/api/update?token=${blynk_token}&V0=") +
+                  return std::string("http://blynk.cloud{blynk_token}&V0=") +
                          std::to_string(v0) + "&V1=" + std::to_string(v1) + "&V2=" + std::to_string(v2) +
                          "&V3=" + std::to_string(v3) + "&V4=" + std::to_string(v4) + "&V5=" + std::to_string(v5) +
                          "&V6=" + std::to_string(v6) + "&V7=" + std::to_string(v7);
@@ -183,7 +177,6 @@ modbus_controller:
     address: 0x01
     modbus_id: senergy_modbus
     update_interval: 5s
-
 output:
   - platform: gpio
     pin: GPIO14
