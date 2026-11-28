@@ -23,15 +23,12 @@ wifi:
         static_ip: 192.168.10.200
         gateway: 192.168.10.1
         subnet: 255.255.255.0
-
     - ssid: "VUNGO"
       password: "1234567890"
       priority: 5
-
     - ssid: "Quang Tho"
       password: "12345678"
       priority: 3
-
   ap:
     ssid: "JKBMS-Senergy-Backup"
     password: "12345678"
@@ -51,20 +48,17 @@ time:
               auto now = id(sntp_time).now();
               if (!now.is_valid()) return;
               int cur_mins = now.hour * 60 + now.minute;
-              
               auto in_range = [&](int sh, int sm, int eh, int em) {
                 int start = sh * 60 + sm;
                 int end = eh * 60 + em;
                 if (start <= end) return (cur_mins >= start && cur_mins < end);
                 else return (cur_mins >= start || cur_mins < end);
               };
-
               bool active = false;
               if (id(slot1_enable).state && in_range(id(s1_start_h).state, id(s1_start_m).state, id(s1_end_h).state, id(s1_end_m).state)) active = true;
               if (id(slot2_enable).state && in_range(id(s2_start_h).state, id(s2_start_m).state, id(s2_end_h).state, id(s2_end_m).state)) active = true;
               if (id(slot3_enable).state && in_range(id(s3_start_h).state, id(s3_start_m).state, id(s3_end_h).state, id(s3_end_m).state)) active = true;
               if (id(slot4_enable).state && in_range(id(s4_start_h).state, id(s4_start_m).state, id(s4_end_h).state, id(s4_end_m).state)) active = true;
-
               if (id(discharge_master).state != active) {
                 if (active) id(discharge_master).turn_on();
                 else id(discharge_master).turn_off();
@@ -188,7 +182,6 @@ modbus_controller:
     address: 0x01
     modbus_id: senergy_modbus
     update_interval: 5s
-
 output:
   - platform: gpio
     pin: GPIO14
@@ -209,25 +202,21 @@ switch:
     id: discharge_master
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
-
   - platform: template
     name: "Lich xa 1"
     id: slot1_enable
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
-
   - platform: template
     name: "Lich xa 2"
     id: slot2_enable
     optimistic: true
     restore_mode: RESTORE_DEFAULT_OFF
-
   - platform: template
     name: "Lich xa 3"
     id: slot3_enable
     optimistic: true
     restore_mode: RESTORE_DEFAULT_OFF
-
   - platform: template
     name: "Lich xa 4"
     id: slot4_enable
@@ -257,7 +246,6 @@ number:
     optimistic: true
     restore_value: true
     unit_of_measurement: "A"
-
   - platform: template
     name: "Dong Xa toi da (A)"
     id: set_discharge_current
@@ -268,7 +256,6 @@ number:
     optimistic: true
     restore_value: true
     unit_of_measurement: "A"
-
   - platform: template
     name: "Dien ap ngat xa (V)"
     id: set_cutoff_volt
@@ -279,7 +266,6 @@ number:
     optimistic: true
     restore_value: true
     unit_of_measurement: "V"
-
   - platform: template
     name: "Lich 1 - Gio Bat dau"
     id: s1_start_h
@@ -316,7 +302,6 @@ number:
     initial_value: 0
     optimistic: true
     restore_value: true
-
   - platform: template
     name: "Lich 2 - Gio Bat dau"
     id: s2_start_h
@@ -353,7 +338,6 @@ number:
     initial_value: 0
     optimistic: true
     restore_value: true
-
   - platform: template
     name: "Lich 3 - Gio Bat dau"
     id: s3_start_h
@@ -364,3 +348,145 @@ number:
     optimistic: true
     restore_value: true
   - platform: template
+    name: "Lich 3 - Phut Bat dau"
+    id: s3_start_m
+    min_value: 0
+    max_value: 55
+    step: 5
+    initial_value: 0
+    optimistic: true
+    restore_value: true
+  - platform: template
+    name: "Lich 3 - Gio Ket thuc"
+    id: s3_end_h
+    min_value: 0
+    max_value: 23
+    step: 1
+    initial_value: 0
+    optimistic: true
+    restore_value: true
+  - platform: template
+    name: "Lich 3 - Phut Ket thuc"
+    id: s3_end_m
+    min_value: 0
+    max_value: 55
+    step: 5
+    initial_value: 0
+    optimistic: true
+    restore_value: true
+  - platform: template
+    name: "Lich 4 - Gio Bat dau"
+    id: s4_start_h
+    min_value: 0
+    max_value: 23
+    step: 1
+    initial_value: 0
+    optimistic: true
+    restore_value: true
+  - platform: template
+    name: "Lich 4 - Phut Bat dau"
+    id: s4_start_m
+    min_value: 0
+    max_value: 55
+    step: 5
+    initial_value: 0
+    optimistic: true
+    restore_value: true
+  - platform: template
+    name: "Lich 4 - Gio Ket thuc"
+    id: s4_end_h
+    min_value: 0
+    max_value: 23
+    step: 1
+    initial_value: 0
+    optimistic: true
+    restore_value: true
+  - platform: template
+    name: "Lich 4 - Phut Ket thuc"
+    id: s4_end_m
+    min_value: 0
+    max_value: 55
+    step: 5
+    initial_value: 0
+    optimistic: true
+    restore_value: true
+
+sensor:
+  - platform: jk_bms_ble
+    jk_bms_ble_id: bms0
+    total_voltage:
+      name: "Dien ap Pin (V)"
+      id: total_voltage
+    current:
+      name: "Dong Pin (A)"
+      id: current
+    power:
+      name: "Cong suat Pin BMS (W)"
+      id: bms_power
+    state_of_charge:
+      name: "Dung luong Pin (%)"
+      id: state_of_charge
+    min_cell_voltage:
+      name: "Cell thap nhat (V)"
+      id: min_cell_voltage
+    max_cell_voltage:
+      name: "Cell cao nhat (V)"
+      id: max_cell_voltage
+    delta_cell_voltage:
+      name: "Lech ap Cell (V)"
+      id: delta_cell_voltage
+    power_tube_temperature:
+      name: "Nhiet do MOS (C)"
+      id: mos_temp
+    cell_voltage_1:
+      name: "Cell 1 (V)"
+    cell_voltage_2:
+      name: "Cell 2 (V)"
+    cell_voltage_3:
+      name: "Cell 3 (V)"
+    cell_voltage_4:
+      name: "Cell 4 (V)"
+    cell_voltage_5:
+      name: "Cell 5 (V)"
+    cell_voltage_6:
+      name: "Cell 6 (V)"
+    cell_voltage_7:
+      name: "Cell 7 (V)"
+    cell_voltage_8:
+      name: "Cell 8 (V)"
+
+  - platform: modbus_controller
+    modbus_controller_id: senergy_inv
+    name: "Cong suat Mat troi PV (W)"
+    id: pv_power
+    register_type: read
+    address: 0x0002
+    value_type: U_WORD
+    unit_of_measurement: "W"
+
+  - platform: modbus_controller
+    modbus_controller_id: senergy_inv
+    name: "Cong suat Hoa luoi / Luoi (W)"
+    id: grid_power
+    register_type: read
+    address: 0x000A
+    value_type: S_WORD
+    unit_of_measurement: "W"
+
+  - platform: modbus_controller
+    modbus_controller_id: senergy_inv
+    name: "Cong suat Tai tieu thu (W)"
+    id: load_power
+    register_type: read
+    address: 0x000C
+    value_type: U_WORD
+    unit_of_measurement: "W"
+
+  - platform: modbus_controller
+    modbus_controller_id: senergy_inv
+    name: "Cong suat Sac/Xa Bien tan (W)"
+    id: bat_power
+    register_type: read
+    address: 0x000E
+    value_type: S_WORD
+    unit_of_measurement: "W"
