@@ -83,9 +83,6 @@ ota:
 
 # Gửi dữ liệu lên Blynk Cloud xem qua 4G (mỗi 10 giây)
 http_request:
-  useragent: esphome/device
-  timeout: 5s
-
 interval:
   - interval: 10s
     then:
@@ -95,25 +92,60 @@ interval:
           then:
             - http_request.get:
                 url: !lambda |-
-                  char buf;
-                  snprintf(buf, sizeof(buf),
-                    "http://blynk.cloud",
-                    "${blynk_token}",
-                    isnan(id(total_voltage).state) ? 0.0 : id(total_voltage).state,
-                    isnan(id(current).state) ? 0.0 : id(current).state,
-                    isnan(id(state_of_charge).state) ? 0.0 : id(state_of_charge).state,
-                    isnan(id(pv_power).state) ? 0.0 : id(pv_power).state,
-                    isnan(id(grid_power).state) ? 0.0 : id(grid_power).state,
-                    isnan(id(load_power).state) ? 0.0 : id(load_power).state,
-                    isnan(id(bat_power).state) ? 0.0 : id(bat_power).state,
-                    id(discharge_master).state ? 1 : 0
-                  );
-                  return std::string(buf);
+                  float v0 = isnan(id(total_voltage).state) ? 0.0 : id(total_voltage).state;
+                  float v1 = isnan(id(current).state) ? 0.0 : id(current).state;
+                  int v2 = isnan(id(state_of_charge).state) ? 0 : (int)id(state_of_charge).state;
+                  int v3 = isnan(id(pv_power).state) ? 0 : (int)id(pv_power).state;
+                  int v4 = isnan(id(grid_power).state) ? 0 : (int)id(grid_power).state;
+                  int v5 = isnan(id(load_power).state) ? 0 : (int)id(load_power).state;
+                  int v6 = isnan(id(bat_power).state) ? 0 : (int)id(bat_power).state;
+                  int v7 = id(discharge_master).state ? 1 : 0;
+                  return "http://blynk.cloud{blynk_token}&V0=" + to_string(v0) + "&V1=" + to_string(v1) + "&V2=" + to_string(v2) + "&V3=" + to_string(v3) + "&V4=" + to_string(v4) + "&V5=" + to_string(v5) + "&V6=" + to_string(v6) + "&V7=" + to_string(v7);
 
-  # Module 2: Gửi gói tin CAN chuẩn Pylontech trực tiếp sang Senergy 4kW mỗi 1 giây
   - interval: 1s
     then:
       - lambda: |-
+          uint16_t chg_v = 284;
+          uint16_t chg_i = (uint16_t)(id(set_charge_current).state * 10);
+          uint16_t dis_i = id(discharge_master).state ? (uint16_t)(id(set_discharge_current).state * 10) : 0;
+          uint16_t dis_v = (uint16_t)(id(set_cutoff_volt).state * 10);
+          std::vector<uint8_t> d351 = {
+            (uint8_t)(chg_v & 0xFF), (uint8_t)(chg_v >> 8),
+            (uint8_t)(chg_i & 0xFF), (uint8_t)(chg_i >> 8),
+            (uint8_t)(dis_i & 0xFF), (uint8_t)(dis_i >> 8),
+            (uint8_t)(dis_v & 0xFF), (uint8_t)(dis_v >> 8)
+          };
+          id(can_bus).send_data(0x351, false, d351);
+
+          uint16_t soc = isnan(id(state_of_charge).state) ? 50 : (uint16_t)id(state_of_charge).state;
+          uint16_t soh = 100;
+          std::vector<uint8_t> d355 = {
+            (uint8_t)(soc & 0xFF), (uint8_t)(soc >> 8),
+            (uint8_t)(soh & 0xFF), (uint8_t)(soh >> 8),
+            0x00, 0x00, 0x00, 0x00
+          };
+          id(can_bus).send_data(0x355, false, d355);
+
+          int16_t v_real = isnan(id(total_voltage).state) ? 2600 : (int16_t)(id(total_voltage).state * 100);
+          int16_t i_real = isnan(id(current).state) ? 0 : (int16_t)(id(current).state * 10);
+          int16_t t_real = isnan(id(mos_temp).state) ? 250 : (int16_t)(id(mos_temp).state * 10);
+          std::vector<uint8_t> d356 = {
+            (uint8_t)(v_real & 0xFF), (uint8_t)(v_real >> 8),
+            (uint8_t)(i_real & 0xFF), (uint8_t)(i_real >> 8),
+            (uint8_t)(t_real & 0xFF), (uint8_t)(t_real >> 8),
+            0x00, 0x00
+          };
+          id(can_bus).send_data(0x356, false, d356);
+
+          uint8_t flag_35c = 0x80;
+          if (id(discharge_master).state) flag_35c |= 0x40;
+          std::vector<uint8_t> d359 = {0x00, 0x00, 0x00, 0x00, 0x01, 0x50, 0x4E, 0x00};
+          std::vector<uint8_t> d35c = {flag_35c, 0x00};
+          std::vector<uint8_t> d35e = {'P', 'Y', 'L', 'O', 'N', ' ', ' ', ' '};
+          id(can_bus).send_data(0x359, false, d359);
+          id(can_bus).send_data(0x35C, false, d35c);
+          id(can_bus).send_data(0x35E, false, d35e);
+ - lambda: |-
           // 1. Gói 0x351: Giới hạn Áp sạc, Dòng sạc, Dòng xả (theo thanh cài đặt & lịch xả), Áp ngắt xả
           uint16_t chg_v = 284; // 28.4V (đơn vị 0.1V)
           uint16_t chg_i = (uint16_t)(id(set_charge_current).state * 10);
@@ -181,6 +213,7 @@ jk_bms_ble:
 canbus:
   - platform: esp32_can
     id: can_bus
+    can_id: 0×351
     tx_pin: GPIO4
     rx_pin: GPIO5
     bit_rate: 500kbps
