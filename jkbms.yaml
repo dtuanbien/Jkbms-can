@@ -48,8 +48,6 @@ time:
               bool active = false;
               if (id(slot1_enable).state && in_range(id(s1_start_h).state, id(s1_start_m).state, id(s1_end_h).state, id(s1_end_m).state)) active = true;
               if (id(slot2_enable).state && in_range(id(s2_start_h).state, id(s2_start_m).state, id(s2_end_h).state, id(s2_end_m).state)) active = true;
-              if (id(slot3_enable).state && in_range(id(s3_start_h).state, id(s3_start_m).state, id(s3_end_h).state, id(s3_end_m).state)) active = true;
-              if (id(slot4_enable).state && in_range(id(s4_start_h).state, id(s4_start_m).state, id(s4_end_h).state, id(s4_end_m).state)) active = true;
 
               if (id(discharge_master).state != active) {
                 if (active) id(discharge_master).turn_on();
@@ -65,7 +63,7 @@ ota:
 
 http_request:
   useragent: esphome/device
-  timeout: 5s
+  timeout: 10s
 
 interval:
   - interval: 10s
@@ -76,7 +74,7 @@ interval:
           then:
             - http_request.get:
                 url: !lambda |-
-                  char buf[320];
+                  char buf[340];
                   float v0 = isnan(id(total_voltage).state) ? 0.0f : id(total_voltage).state;
                   float v1 = isnan(id(current).state) ? 0.0f : id(current).state;
                   float v2 = isnan(id(state_of_charge).state) ? 0.0f : id(state_of_charge).state;
@@ -86,10 +84,14 @@ interval:
                   float v6 = isnan(id(bat_power).state) ? 0.0f : id(bat_power).state;
                   int v7 = id(discharge_master).state ? 1 : 0;
                   snprintf(buf, sizeof(buf),
-                    "http://blynk.cloud/external/api/update?token=${blynk_token}&V0=%.2f&V1=%.2f&V2=%.1f&V3=%.0f&V4=%.0f&V5=%.0f&V6=%.0f&V7=%d",
+                    "https://blynk.cloud/external/api/update?token=${blynk_token}&V0=%.2f&V1=%.2f&V2=%.1f&V3=%.0f&V4=%.0f&V5=%.0f&V6=%.0f&V7=%d",
                     v0, v1, v2, v3, v4, v5, v6, v7
                   );
                   return std::string(buf);
+                on_response:
+                  then:
+                    - lambda: |-
+                        ESP_LOGI("blynk", "HTTP status: %d", response->status_code);
 
   - interval: 1s
     then:
@@ -182,6 +184,15 @@ output:
     pin: GPIO14
     id: bms_pwr_pulse
 
+  - platform: modbus_controller
+    modbus_controller_id: senergy_inv
+    id: grid_export_limit_out
+    address: 0x0046
+    register_type: holding
+    value_type: U_WORD
+    write_lambda: |-
+      return (uint16_t)x;
+
 button:
   - platform: template
     name: "Kich bat / Tat nguon JK-BMS"
@@ -207,18 +218,6 @@ switch:
   - platform: template
     name: "Lich xa 2"
     id: slot2_enable
-    optimistic: true
-    restore_mode: RESTORE_DEFAULT_OFF
-
-  - platform: template
-    name: "Lich xa 3"
-    id: slot3_enable
-    optimistic: true
-    restore_mode: RESTORE_DEFAULT_OFF
-
-  - platform: template
-    name: "Lich xa 4"
-    id: slot4_enable
     optimistic: true
     restore_mode: RESTORE_DEFAULT_OFF
 
@@ -267,6 +266,21 @@ number:
     optimistic: true
     restore_value: true
     unit_of_measurement: "V"
+
+  - platform: template
+    name: "Cong suat day luoi toi da (W)"
+    id: set_grid_export_power
+    min_value: 0
+    max_value: 4000
+    step: 100
+    initial_value: 0
+    optimistic: true
+    restore_value: true
+    unit_of_measurement: "W"
+    set_action:
+      - output.set_level:
+          id: grid_export_limit_out
+          level: !lambda "return x / 4000.0f;"
 
   - platform: template
     name: "Lich 1 - Gio Bat dau"
@@ -335,80 +349,6 @@ number:
   - platform: template
     name: "Lich 2 - Phut Ket thuc"
     id: s2_end_m
-    min_value: 0
-    max_value: 55
-    step: 5
-    initial_value: 0
-    optimistic: true
-    restore_value: true
-
-  - platform: template
-    name: "Lich 3 - Gio Bat dau"
-    id: s3_start_h
-    min_value: 0
-    max_value: 23
-    step: 1
-    initial_value: 0
-    optimistic: true
-    restore_value: true
-  - platform: template
-    name: "Lich 3 - Phut Bat dau"
-    id: s3_start_m
-    min_value: 0
-    max_value: 55
-    step: 5
-    initial_value: 0
-    optimistic: true
-    restore_value: true
-  - platform: template
-    name: "Lich 3 - Gio Ket thuc"
-    id: s3_end_h
-    min_value: 0
-    max_value: 23
-    step: 1
-    initial_value: 0
-    optimistic: true
-    restore_value: true
-  - platform: template
-    name: "Lich 3 - Phut Ket thuc"
-    id: s3_end_m
-    min_value: 0
-    max_value: 55
-    step: 5
-    initial_value: 0
-    optimistic: true
-    restore_value: true
-
-  - platform: template
-    name: "Lich 4 - Gio Bat dau"
-    id: s4_start_h
-    min_value: 0
-    max_value: 23
-    step: 1
-    initial_value: 0
-    optimistic: true
-    restore_value: true
-  - platform: template
-    name: "Lich 4 - Phut Bat dau"
-    id: s4_start_m
-    min_value: 0
-    max_value: 55
-    step: 5
-    initial_value: 0
-    optimistic: true
-    restore_value: true
-  - platform: template
-    name: "Lich 4 - Gio Ket thuc"
-    id: s4_end_h
-    min_value: 0
-    max_value: 23
-    step: 1
-    initial_value: 0
-    optimistic: true
-    restore_value: true
-  - platform: template
-    name: "Lich 4 - Phut Ket thuc"
-    id: s4_end_m
     min_value: 0
     max_value: 55
     step: 5
