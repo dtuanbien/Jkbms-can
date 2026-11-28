@@ -14,7 +14,6 @@ esp32:
 logger:
   level: INFO
 
-# Kết nối Wi-Fi chính + 2 Wi-Fi dự phòng (Tự động chuyển đổi khi rớt mạng)
 wifi:
   networks:
     - ssid: "TUAN BIEN"
@@ -37,7 +36,6 @@ wifi:
     ssid: "JKBMS-Senergy-Backup"
     password: "12345678"
 
-# Đồng bộ giờ chuẩn Việt Nam để chạy 4 khung giờ xả tùy chọn
 time:
   - platform: sntp
     id: sntp_time
@@ -72,7 +70,6 @@ time:
                 else id(discharge_master).turn_off();
               }
 
-# Web nội bộ (Giao diện Sáng/Tối Day-Night, biểu tượng Mặt trời & Nạp OTA)
 web_server:
   port: 80
   version: 3
@@ -81,8 +78,10 @@ web_server:
 ota:
   platform: esphome
 
-# Gửi dữ liệu lên Blynk Cloud xem qua 4G (mỗi 10 giây)
 http_request:
+  useragent: esphome/device
+  timeout: 5s
+
 interval:
   - interval: 10s
     then:
@@ -100,7 +99,10 @@ interval:
                   int v5 = isnan(id(load_power).state) ? 0 : (int)id(load_power).state;
                   int v6 = isnan(id(bat_power).state) ? 0 : (int)id(bat_power).state;
                   int v7 = id(discharge_master).state ? 1 : 0;
-                  return "http://blynk.cloud{blynk_token}&V0=" + to_string(v0) + "&V1=" + to_string(v1) + "&V2=" + to_string(v2) + "&V3=" + to_string(v3) + "&V4=" + to_string(v4) + "&V5=" + to_string(v5) + "&V6=" + to_string(v6) + "&V7=" + to_string(v7);
+                  return std::string("http://blynk.cloud{blynk_token}&V0=") +
+                         std::to_string(v0) + "&V1=" + std::to_string(v1) + "&V2=" + std::to_string(v2) +
+                         "&V3=" + std::to_string(v3) + "&V4=" + std::to_string(v4) + "&V5=" + std::to_string(v5) +
+                         "&V6=" + std::to_string(v6) + "&V7=" + std::to_string(v7);
 
   - interval: 1s
     then:
@@ -145,53 +147,7 @@ interval:
           id(can_bus).send_data(0x359, false, d359);
           id(can_bus).send_data(0x35C, false, d35c);
           id(can_bus).send_data(0x35E, false, d35e);
- - lambda: |-
-          // 1. Gói 0x351: Giới hạn Áp sạc, Dòng sạc, Dòng xả (theo thanh cài đặt & lịch xả), Áp ngắt xả
-          uint16_t chg_v = 284; // 28.4V (đơn vị 0.1V)
-          uint16_t chg_i = (uint16_t)(id(set_charge_current).state * 10);
-          uint16_t dis_i = id(discharge_master).state ? (uint16_t)(id(set_discharge_current).state * 10) : 0;
-          uint16_t dis_v = (uint16_t)(id(set_cutoff_volt).state * 10);
-          std::vector<uint8_t> d351 = {
-            (uint8_t)(chg_v & 0xFF), (uint8_t)(chg_v >> 8),
-            (uint8_t)(chg_i & 0xFF), (uint8_t)(chg_i >> 8),
-            (uint8_t)(dis_i & 0xFF), (uint8_t)(dis_i >> 8),
-            (uint8_t)(dis_v & 0xFF), (uint8_t)(dis_v >> 8)
-          };
-          id(can_bus).send_data(0x351, false, d351);
 
-          // 2. Gói 0x355: Phần trăm Pin (SoC) và Sức khỏe Pin (SoH = 100%)
-          uint16_t soc = isnan(id(state_of_charge).state) ? 50 : (uint16_t)id(state_of_charge).state;
-          uint16_t soh = 100;
-          std::vector<uint8_t> d355 = {
-            (uint8_t)(soc & 0xFF), (uint8_t)(soc >> 8),
-            (uint8_t)(soh & 0xFF), (uint8_t)(soh >> 8),
-            0x00, 0x00, 0x00, 0x00
-          };
-          id(can_bus).send_data(0x355, false, d355);
-
-          // 3. Gói 0x356: Điện áp thực (0.01V), Dòng điện thực (0.1A), Nhiệt độ (0.1C)
-          int16_t v_real = isnan(id(total_voltage).state) ? 2600 : (int16_t)(id(total_voltage).state * 100);
-          int16_t i_real = isnan(id(current).state) ? 0 : (int16_t)(id(current).state * 10);
-          int16_t t_real = isnan(id(mos_temp).state) ? 250 : (int16_t)(id(mos_temp).state * 10);
-          std::vector<uint8_t> d356 = {
-            (uint8_t)(v_real & 0xFF), (uint8_t)(v_real >> 8),
-            (uint8_t)(i_real & 0xFF), (uint8_t)(i_real >> 8),
-            (uint8_t)(t_real & 0xFF), (uint8_t)(t_real >> 8),
-            0x00, 0x00
-          };
-          id(can_bus).send_data(0x356, false, d356);
-
-          // 4. Gói 0x359 & 0x35C: Cờ cho phép sạc/xả
-          uint8_t flag_35c = 0x80; // Cho phép Sạc
-          if (id(discharge_master).state) flag_35c |= 0x40; // Cho phép Xả
-          std::vector<uint8_t> d359 = {0x00, 0x00, 0x00, 0x00, 0x01, 0x50, 0x4E, 0x00};
-          std::vector<uint8_t> d35c = {flag_35c, 0x00};
-          std::vector<uint8_t> d35e = {'P', 'Y', 'L', 'O', 'N', ' ', ' ', ' '};
-          id(can_bus).send_data(0x359, false, d359);
-          id(can_bus).send_data(0x35C, false, d35c);
-          id(can_bus).send_data(0x35E, false, d35e);
-
-# Module 1: Đọc JK-BMS qua Bluetooth (Chỉ dùng thư viện esphome-jk-bms chính thức)
 esp32_ble_tracker:
   scan_parameters:
     active: false
@@ -209,16 +165,14 @@ jk_bms_ble:
     throttle: 2s
     id: bms0
 
-# Khai báo phần cứng CAN trên ESP32 (D4, D5)
 canbus:
   - platform: esp32_can
     id: can_bus
-    can_id: 0×351
+    can_id: 0x351
     tx_pin: GPIO4
     rx_pin: GPIO5
     bit_rate: 500kbps
 
-# Module 3: Đọc RS485 Modbus từ biến tần Senergy 4kW (D16, D17)
 uart:
   id: modbus_uart
   tx_pin: GPIO17
@@ -235,7 +189,6 @@ modbus_controller:
     modbus_id: senergy_modbus
     update_interval: 5s
 
-# Chân kích xung bật/tắt nguồn JK-BMS (GPIO14 nối qua Opto/Rơ-le vào chân kích BMS)
 output:
   - platform: gpio
     pin: GPIO14
@@ -243,46 +196,44 @@ output:
 
 button:
   - platform: template
-    name: "🔄 Kich bat / Tat nguon JK-BMS"
+    name: "Kich bat Tat nguon JK-BMS"
     id: btn_toggle_bms
     on_press:
       - output.turn_on: bms_pwr_pulse
       - delay: 2500ms
       - output.turn_off: bms_pwr_pulse
 
-# Công tắc điều khiển Xả Pin & 4 Lịch xả tùy chọn
 switch:
   - platform: template
-    name: "☀️ Cho phep Xa Pin (Tong)"
+    name: "Cho phep Xa Pin Tong"
     id: discharge_master
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
 
   - platform: template
-    name: "⏰ Lich xa 1"
+    name: "Lich xa 1"
     id: slot1_enable
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
 
   - platform: template
-    name: "⏰ Lich xa 2"
+    name: "Lich xa 2"
     id: slot2_enable
     optimistic: true
     restore_mode: RESTORE_DEFAULT_OFF
 
   - platform: template
-    name: "⏰ Lich xa 3"
+    name: "Lich xa 3"
     id: slot3_enable
     optimistic: true
     restore_mode: RESTORE_DEFAULT_OFF
 
   - platform: template
-    name: "⏰ Lich xa 4"
+    name: "Lich xa 4"
     id: slot4_enable
     optimistic: true
     restore_mode: RESTORE_DEFAULT_OFF
 
-# Công tắc cơ vật lý đấu chân D13 (GPIO13) và GND để kích bật/tắt BMS bằng tay
 binary_sensor:
   - platform: gpio
     pin:
@@ -295,10 +246,9 @@ binary_sensor:
     on_press:
       - button.press: btn_toggle_bms
 
-# Thanh trượt cài đặt dòng áp & 4 Lịch giờ/phút tùy chỉnh
 number:
   - platform: template
-    name: "⚙️ Dong Sac toi da (A)"
+    name: "Dong Sac toi da (A)"
     id: set_charge_current
     min_value: 10
     max_value: 90
@@ -309,7 +259,7 @@ number:
     unit_of_measurement: "A"
 
   - platform: template
-    name: "⚙️ Dong Xa toi da (A)"
+    name: "Dong Xa toi da (A)"
     id: set_discharge_current
     min_value: 10
     max_value: 95
@@ -320,7 +270,7 @@ number:
     unit_of_measurement: "A"
 
   - platform: template
-    name: "⚙️ Dien ap ngat xa (V)"
+    name: "Dien ap ngat xa (V)"
     id: set_cutoff_volt
     min_value: 22.4
     max_value: 26.0
@@ -330,7 +280,6 @@ number:
     restore_value: true
     unit_of_measurement: "V"
 
-  # Lịch 1
   - platform: template
     name: "Lich 1 - Gio Bat dau"
     id: s1_start_h
@@ -365,3 +314,53 @@ number:
     max_value: 55
     step: 5
     initial_value: 0
+    optimistic: true
+    restore_value: true
+
+  - platform: template
+    name: "Lich 2 - Gio Bat dau"
+    id: s2_start_h
+    min_value: 0
+    max_value: 23
+    step: 1
+    initial_value: 0
+    optimistic: true
+    restore_value: true
+  - platform: template
+    name: "Lich 2 - Phut Bat dau"
+    id: s2_start_m
+    min_value: 0
+    max_value: 55
+    step: 5
+    initial_value: 0
+    optimistic: true
+    restore_value: true
+  - platform: template
+    name: "Lich 2 - Gio Ket thuc"
+    id: s2_end_h
+    min_value: 0
+    max_value: 23
+    step: 1
+    initial_value: 0
+    optimistic: true
+    restore_value: true
+  - platform: template
+    name: "Lich 2 - Phut Ket thuc"
+    id: s2_end_m
+    min_value: 0
+    max_value: 55
+    step: 5
+    initial_value: 0
+    optimistic: true
+    restore_value: true
+
+  - platform: template
+    name: "Lich 3 - Gio Bat dau"
+    id: s3_start_h
+    min_value: 0
+    max_value: 23
+    step: 1
+    initial_value: 0
+    optimistic: true
+    restore_value: true
+  - platform: template
