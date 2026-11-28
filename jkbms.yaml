@@ -33,7 +33,6 @@ wifi:
       password: "12345678"
       priority: 3
 
-  # Phát Wi-Fi dự phòng nội bộ từ chính ESP32 nếu cả 3 mạng trên đều mất
   ap:
     ssid: "JKBMS-Senergy-Backup"
     password: "12345678"
@@ -73,7 +72,7 @@ time:
                 else id(discharge_master).turn_off();
               }
 
-# Web nội bộ (Hỗ trợ giao diện Sáng/Tối Day-Night, biểu tượng Mặt trời & Nạp OTA)
+# Web nội bộ (Giao diện Sáng/Tối Day-Night, biểu tượng Mặt trời & Nạp OTA)
 web_server:
   port: 80
   version: 3
@@ -96,7 +95,7 @@ interval:
           then:
             - http_request.get:
                 url: !lambda |-
-                  char buf[256];
+                  char buf;
                   snprintf(buf, sizeof(buf),
                     "http://blynk.cloud",
                     "${blynk_token}",
@@ -111,7 +110,56 @@ interval:
                   );
                   return std::string(buf);
 
-# Module 1: Đọc JK-BMS qua Bluetooth
+  # Module 2: Gửi gói tin CAN chuẩn Pylontech trực tiếp sang Senergy 4kW mỗi 1 giây
+  - interval: 1s
+    then:
+      - lambda: |-
+          // 1. Gói 0x351: Giới hạn Áp sạc, Dòng sạc, Dòng xả (theo thanh cài đặt & lịch xả), Áp ngắt xả
+          uint16_t chg_v = 284; // 28.4V (đơn vị 0.1V)
+          uint16_t chg_i = (uint16_t)(id(set_charge_current).state * 10);
+          uint16_t dis_i = id(discharge_master).state ? (uint16_t)(id(set_discharge_current).state * 10) : 0;
+          uint16_t dis_v = (uint16_t)(id(set_cutoff_volt).state * 10);
+          std::vector<uint8_t> d351 = {
+            (uint8_t)(chg_v & 0xFF), (uint8_t)(chg_v >> 8),
+            (uint8_t)(chg_i & 0xFF), (uint8_t)(chg_i >> 8),
+            (uint8_t)(dis_i & 0xFF), (uint8_t)(dis_i >> 8),
+            (uint8_t)(dis_v & 0xFF), (uint8_t)(dis_v >> 8)
+          };
+          id(can_bus).send_data(0x351, false, d351);
+
+          // 2. Gói 0x355: Phần trăm Pin (SoC) và Sức khỏe Pin (SoH = 100%)
+          uint16_t soc = isnan(id(state_of_charge).state) ? 50 : (uint16_t)id(state_of_charge).state;
+          uint16_t soh = 100;
+          std::vector<uint8_t> d355 = {
+            (uint8_t)(soc & 0xFF), (uint8_t)(soc >> 8),
+            (uint8_t)(soh & 0xFF), (uint8_t)(soh >> 8),
+            0x00, 0x00, 0x00, 0x00
+          };
+          id(can_bus).send_data(0x355, false, d355);
+
+          // 3. Gói 0x356: Điện áp thực (0.01V), Dòng điện thực (0.1A), Nhiệt độ (0.1C)
+          int16_t v_real = isnan(id(total_voltage).state) ? 2600 : (int16_t)(id(total_voltage).state * 100);
+          int16_t i_real = isnan(id(current).state) ? 0 : (int16_t)(id(current).state * 10);
+          int16_t t_real = isnan(id(mos_temp).state) ? 250 : (int16_t)(id(mos_temp).state * 10);
+          std::vector<uint8_t> d356 = {
+            (uint8_t)(v_real & 0xFF), (uint8_t)(v_real >> 8),
+            (uint8_t)(i_real & 0xFF), (uint8_t)(i_real >> 8),
+            (uint8_t)(t_real & 0xFF), (uint8_t)(t_real >> 8),
+            0x00, 0x00
+          };
+          id(can_bus).send_data(0x356, false, d356);
+
+          // 4. Gói 0x359 & 0x35C: Cờ cho phép sạc/xả
+          uint8_t flag_35c = 0x80; // Cho phép Sạc
+          if (id(discharge_master).state) flag_35c |= 0x40; // Cho phép Xả
+          std::vector<uint8_t> d359 = {0x00, 0x00, 0x00, 0x00, 0x01, 0x50, 0x4E, 0x00};
+          std::vector<uint8_t> d35c = {flag_35c, 0x00};
+          std::vector<uint8_t> d35e = {'P', 'Y', 'L', 'O', 'N', ' ', ' ', ' '};
+          id(can_bus).send_data(0x359, false, d359);
+          id(can_bus).send_data(0x35C, false, d35c);
+          id(can_bus).send_data(0x35E, false, d35e);
+
+# Module 1: Đọc JK-BMS qua Bluetooth (Chỉ dùng thư viện esphome-jk-bms chính thức)
 esp32_ble_tracker:
   scan_parameters:
     active: false
@@ -122,7 +170,6 @@ ble_client:
 
 external_components:
   - source: github://syssi/esphome-jk-bms@main
-  - source: github://syssi/esphome-jk-bms-can@main
 
 jk_bms_ble:
   - ble_client_id: client0
@@ -130,23 +177,13 @@ jk_bms_ble:
     throttle: 2s
     id: bms0
 
-# Module 2: Giao tiếp CAN Pylontech sang Senergy 4kW (D4, D5)
+# Khai báo phần cứng CAN trên ESP32 (D4, D5)
 canbus:
   - platform: esp32_can
     id: can_bus
     tx_pin: GPIO4
     rx_pin: GPIO5
     bit_rate: 500kbps
-
-jk_bms_can:
-  - jk_bms_ble_id: bms0
-    canbus_id: can_bus
-    protocol: PYLON
-    update_interval: 1s
-    charge_voltage: 28.4V
-    charge_current_limit: 70A
-    discharge_current_limit: 75A
-    discharge_voltage: 25.0V
 
 # Module 3: Đọc RS485 Modbus từ biến tần Senergy 4kW (D16, D17)
 uart:
@@ -291,120 +328,6 @@ number:
   - platform: template
     name: "Lich 1 - Phut Ket thuc"
     id: s1_end_m
-    min_value: 0
-    max_value: 55
-    step: 5
-    initial_value: 0
-    optimistic: true
-    restore_value: true
-
-  # Lịch 2
-  - platform: template
-    name: "Lich 2 - Gio Bat dau"
-    id: s2_start_h
-    min_value: 0
-    max_value: 23
-    step: 1
-    initial_value: 0
-    optimistic: true
-    restore_value: true
-  - platform: template
-    name: "Lich 2 - Phut Bat dau"
-    id: s2_start_m
-    min_value: 0
-    max_value: 55
-    step: 5
-    initial_value: 0
-    optimistic: true
-    restore_value: true
-  - platform: template
-    name: "Lich 2 - Gio Ket thuc"
-    id: s2_end_h
-    min_value: 0
-    max_value: 23
-    step: 1
-    initial_value: 0
-    optimistic: true
-    restore_value: true
-  - platform: template
-    name: "Lich 2 - Phut Ket thuc"
-    id: s2_end_m
-    min_value: 0
-    max_value: 55
-    step: 5
-    initial_value: 0
-    optimistic: true
-    restore_value: true
-
-  # Lịch 3
-  - platform: template
-    name: "Lich 3 - Gio Bat dau"
-    id: s3_start_h
-    min_value: 0
-    max_value: 23
-    step: 1
-    initial_value: 0
-    optimistic: true
-    restore_value: true
-  - platform: template
-    name: "Lich 3 - Phut Bat dau"
-    id: s3_start_m
-    min_value: 0
-    max_value: 55
-    step: 5
-    initial_value: 0
-    optimistic: true
-    restore_value: true
-  - platform: template
-    name: "Lich 3 - Gio Ket thuc"
-    id: s3_end_h
-    min_value: 0
-    max_value: 23
-    step: 1
-    initial_value: 0
-    optimistic: true
-    restore_value: true
-  - platform: template
-    name: "Lich 3 - Phut Ket thuc"
-    id: s3_end_m
-    min_value: 0
-    max_value: 55
-    step: 5
-    initial_value: 0
-    optimistic: true
-    restore_value: true
-
-  # Lịch 4
-  - platform: template
-    name: "Lich 4 - Gio Bat dau"
-    id: s4_start_h
-    min_value: 0
-    max_value: 23
-    step: 1
-    initial_value: 0
-    optimistic: true
-    restore_value: true
-  - platform: template
-    name: "Lich 4 - Phut Bat dau"
-    id: s4_start_m
-    min_value: 0
-    max_value: 55
-    step: 5
-    initial_value: 0
-    optimistic: true
-    restore_value: true
-  - platform: template
-    name: "Lich 6 - Gio Ket thuc"
-    id: s4_end_h
-    min_value: 0
-    max_value: 23
-    step: 1
-    initial_value: 0
-    optimistic: true
-    restore_value: true
-  - platform: template
-    name: "Lich 4 - Phut Ket thuc"
-    id: s4_end_m
     min_value: 0
     max_value: 55
     step: 5
