@@ -62,7 +62,6 @@ time:
 web_server:
   port: 80
   version: 2
-  local: true
 
 ota:
   platform: esphome
