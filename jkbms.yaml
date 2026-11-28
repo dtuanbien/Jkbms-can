@@ -30,7 +30,6 @@ wifi:
     static_ip: 192.168.1.200
     gateway: 192.168.1.1
     subnet: 255.255.255.0
-    dns1: 8.8.8.8
 
 http_request:
   id: blynk_http
