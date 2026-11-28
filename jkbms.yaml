@@ -2,6 +2,7 @@ substitutions:
   name: jkbms-senergy
   jk_bms_mac: "C8:47:8C:10:79:7A"
   blynk_token: "YApwHwb_atq5PAiQzC-0qHsb74EPLW6e"
+  battery_capacity_ah: "280.0"
 
 esphome:
   name: ${name}
@@ -21,6 +22,8 @@ wifi:
     static_ip: 192.168.1.200
     gateway: 192.168.1.1
     subnet: 255.255.255.0
+    dns1: 8.8.8.8
+    dns2: 1.1.1.1
 
 time:
   - platform: sntp
@@ -75,7 +78,7 @@ interval:
           then:
             - http_request.get:
                 url: !lambda |-
-                  char buf[340];
+                  char buf[520];
                   float v0 = isnan(id(total_voltage).state) ? 0.0f : id(total_voltage).state;
                   float v1 = isnan(id(current).state) ? 0.0f : id(current).state;
                   float v2 = isnan(id(state_of_charge).state) ? 0.0f : id(state_of_charge).state;
@@ -84,9 +87,18 @@ interval:
                   float v5 = isnan(id(load_power).state) ? 0.0f : id(load_power).state;
                   float v6 = isnan(id(bat_power).state) ? 0.0f : id(bat_power).state;
                   int v7 = id(discharge_master).state ? 1 : 0;
+                  float v8 = isnan(id(remaining_ah).state) ? 0.0f : id(remaining_ah).state;
+                  float c1 = isnan(id(cell_1).state) ? 0.0f : id(cell_1).state;
+                  float c2 = isnan(id(cell_2).state) ? 0.0f : id(cell_2).state;
+                  float c3 = isnan(id(cell_3).state) ? 0.0f : id(cell_3).state;
+                  float c4 = isnan(id(cell_4).state) ? 0.0f : id(cell_4).state;
+                  float c5 = isnan(id(cell_5).state) ? 0.0f : id(cell_5).state;
+                  float c6 = isnan(id(cell_6).state) ? 0.0f : id(cell_6).state;
+                  float c7 = isnan(id(cell_7).state) ? 0.0f : id(cell_7).state;
+                  float c8 = isnan(id(cell_8).state) ? 0.0f : id(cell_8).state;
                   snprintf(buf, sizeof(buf),
-                    "https://blynk.cloud/external/api/update?token=${blynk_token}&V0=%.2f&V1=%.2f&V2=%.1f&V3=%.0f&V4=%.0f&V5=%.0f&V6=%.0f&V7=%d",
-                    v0, v1, v2, v3, v4, v5, v6, v7
+                    "https://blynk.cloud/external/api/update?token=${blynk_token}&V0=%.2f&V1=%.2f&V2=%.1f&V3=%.0f&V4=%.0f&V5=%.0f&V6=%.0f&V7=%d&V8=%.1f&V9=%.3f&V10=%.3f&V11=%.3f&V12=%.3f&V13=%.3f&V14=%.3f&V15=%.3f&V16=%.3f",
+                    v0, v1, v2, v3, v4, v5, v6, v7, v8, c1, c2, c3, c4, c5, c6, c7, c8
                   );
                   return std::string(buf);
                 on_response:
@@ -386,20 +398,48 @@ sensor:
       id: mos_temp
     cell_voltage_1:
       name: "Cell 1 (V)"
+      id: cell_1
     cell_voltage_2:
       name: "Cell 2 (V)"
+      id: cell_2
     cell_voltage_3:
       name: "Cell 3 (V)"
+      id: cell_3
     cell_voltage_4:
       name: "Cell 4 (V)"
+      id: cell_4
     cell_voltage_5:
       name: "Cell 5 (V)"
+      id: cell_5
     cell_voltage_6:
       name: "Cell 6 (V)"
+      id: cell_6
     cell_voltage_7:
       name: "Cell 7 (V)"
+      id: cell_7
     cell_voltage_8:
       name: "Cell 8 (V)"
+      id: cell_8
+
+  - platform: template
+    name: "Dung luong luu tru con lai (Ah)"
+    id: remaining_ah
+    unit_of_measurement: "Ah"
+    accuracy_decimals: 1
+    update_interval: 10s
+    lambda: |-
+      if (isnan(id(state_of_charge).state)) return {};
+      return id(state_of_charge).state * ${battery_capacity_ah} / 100.0f;
+
+  - platform: template
+    name: "Nang luong pin uoc tinh (Wh)"
+    id: remaining_wh
+    unit_of_measurement: "Wh"
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: |-
+      if (isnan(id(remaining_ah).state) || isnan(id(total_voltage).state)) return {};
+      return id(remaining_ah).state * id(total_voltage).state;
 
   - platform: modbus_controller
     modbus_controller_id: senergy_inv
