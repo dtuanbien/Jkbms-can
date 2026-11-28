@@ -1,6 +1,7 @@
 substitutions:
   name: jkbms-senergy
   jk_bms_mac: "C8:47:8C:10:79:7A"
+  blynk_token: "YApwHwb_atq5PAiQzC-0qHsb74EPLW6e"
 
 esphome:
   name: ${name}
@@ -11,34 +12,108 @@ esp32:
     type: esp-idf
 
 logger:
-  level: WARN
+  level: INFO
 
+# Kết nối Wi-Fi chính + 2 Wi-Fi dự phòng (Tự động chuyển đổi khi rớt mạng)
 wifi:
-  ssid: "TUAN BIEN"
-  password: "76767676"
-  reboot_timeout: 0s
+  networks:
+    - ssid: "TUAN BIEN"
+      password: "76767676"
+      priority: 10
+      manual_ip:
+        static_ip: 192.168.10.200
+        gateway: 192.168.10.1
+        subnet: 255.255.255.0
+
+    - ssid: "VUNGO"
+      password: "1234567890"
+      priority: 5
+
+    - ssid: "Quang Tho"
+      password: "12345678"
+      priority: 3
+
+  # Phát Wi-Fi dự phòng nội bộ từ chính ESP32 nếu cả 3 mạng trên đều mất
   ap:
-    ssid: "JK-BMS-Fallback"
+    ssid: "JKBMS-Senergy-Backup"
     password: "12345678"
 
-captive_portal:
+# Đồng bộ giờ chuẩn Việt Nam để chạy 4 khung giờ xả tùy chọn
+time:
+  - platform: sntp
+    id: sntp_time
+    timezone: Asia/Ho_Chi_Minh
+    servers:
+      - 0.pool.ntp.org
+      - 1.pool.ntp.org
+    on_time:
+      - seconds: 0
+        minutes: /1
+        then:
+          - lambda: |-
+              auto now = id(sntp_time).now();
+              if (!now.is_valid()) return;
+              int cur_mins = now.hour * 60 + now.minute;
+              
+              auto in_range = [&](int sh, int sm, int eh, int em) {
+                int start = sh * 60 + sm;
+                int end = eh * 60 + em;
+                if (start <= end) return (cur_mins >= start && cur_mins < end);
+                else return (cur_mins >= start || cur_mins < end);
+              };
 
+              bool active = false;
+              if (id(slot1_enable).state && in_range(id(s1_start_h).state, id(s1_start_m).state, id(s1_end_h).state, id(s1_end_m).state)) active = true;
+              if (id(slot2_enable).state && in_range(id(s2_start_h).state, id(s2_start_m).state, id(s2_end_h).state, id(s2_end_m).state)) active = true;
+              if (id(slot3_enable).state && in_range(id(s3_start_h).state, id(s3_start_m).state, id(s3_end_h).state, id(s3_end_m).state)) active = true;
+              if (id(slot4_enable).state && in_range(id(s4_start_h).state, id(s4_start_m).state, id(s4_end_h).state, id(s4_end_m).state)) active = true;
+
+              if (id(discharge_master).state != active) {
+                if (active) id(discharge_master).turn_on();
+                else id(discharge_master).turn_off();
+              }
+
+# Web nội bộ (Hỗ trợ giao diện Sáng/Tối Day-Night, biểu tượng Mặt trời & Nạp OTA)
 web_server:
   port: 80
-  version: 2
-
-http_request:
-  useragent: esphome/device
-  timeout: 3s
-  verify_ssl: false
+  version: 3
+  local: true
 
 ota:
   platform: esphome
 
+# Gửi dữ liệu lên Blynk Cloud xem qua 4G (mỗi 10 giây)
+http_request:
+  useragent: esphome/device
+  timeout: 5s
+
+interval:
+  - interval: 10s
+    then:
+      - if:
+          condition:
+            wifi.connected:
+          then:
+            - http_request.get:
+                url: !lambda |-
+                  char buf[256];
+                  snprintf(buf, sizeof(buf),
+                    "http://blynk.cloud",
+                    "${blynk_token}",
+                    isnan(id(total_voltage).state) ? 0.0 : id(total_voltage).state,
+                    isnan(id(current).state) ? 0.0 : id(current).state,
+                    isnan(id(state_of_charge).state) ? 0.0 : id(state_of_charge).state,
+                    isnan(id(pv_power).state) ? 0.0 : id(pv_power).state,
+                    isnan(id(grid_power).state) ? 0.0 : id(grid_power).state,
+                    isnan(id(load_power).state) ? 0.0 : id(load_power).state,
+                    isnan(id(bat_power).state) ? 0.0 : id(bat_power).state,
+                    id(discharge_master).state ? 1 : 0
+                  );
+                  return std::string(buf);
+
+# Module 1: Đọc JK-BMS qua Bluetooth
 esp32_ble_tracker:
   scan_parameters:
-    interval: 1100ms
-    window: 1100ms
     active: false
 
 ble_client:
@@ -47,282 +122,290 @@ ble_client:
 
 external_components:
   - source: github://syssi/esphome-jk-bms@main
+  - source: github://syssi/esphome-jk-bms-can@main
 
 jk_bms_ble:
   - ble_client_id: client0
     protocol_version: JK02_32S
-    throttle: 3s
+    throttle: 2s
     id: bms0
 
+# Module 2: Giao tiếp CAN Pylontech sang Senergy 4kW (D4, D5)
 canbus:
   - platform: esp32_can
     id: can_bus
-    can_id: 4
     tx_pin: GPIO4
     rx_pin: GPIO5
     bit_rate: 500kbps
 
+jk_bms_can:
+  - jk_bms_ble_id: bms0
+    canbus_id: can_bus
+    protocol: PYLON
+    update_interval: 1s
+    charge_voltage: 28.4V
+    charge_current_limit: 70A
+    discharge_current_limit: 75A
+    discharge_voltage: 25.0V
+
+# Module 3: Đọc RS485 Modbus từ biến tần Senergy 4kW (D16, D17)
 uart:
-  id: mod_bus_uart
+  id: modbus_uart
   tx_pin: GPIO17
   rx_pin: GPIO16
   baud_rate: 9600
 
 modbus:
   id: senergy_modbus
-  uart_id: mod_bus_uart
+  uart_id: modbus_uart
 
 modbus_controller:
-  - id: senergy
+  - id: senergy_inv
     address: 0x01
     modbus_id: senergy_modbus
     update_interval: 5s
-    command_throttle: 100ms
 
+# Chân kích xung bật/tắt nguồn JK-BMS (GPIO14 nối qua Opto/Rơ-le vào chân kích BMS)
+output:
+  - platform: gpio
+    pin: GPIO14
+    id: bms_pwr_pulse
+
+button:
+  - platform: template
+    name: "🔄 Kich bat / Tat nguon JK-BMS"
+    id: btn_toggle_bms
+    on_press:
+      - output.turn_on: bms_pwr_pulse
+      - delay: 2500ms
+      - output.turn_off: bms_pwr_pulse
+
+# Công tắc điều khiển Xả Pin & 4 Lịch xả tùy chọn
+switch:
+  - platform: template
+    name: "☀️ Cho phep Xa Pin (Tong)"
+    id: discharge_master
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+
+  - platform: template
+    name: "⏰ Lich xa 1"
+    id: slot1_enable
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+
+  - platform: template
+    name: "⏰ Lich xa 2"
+    id: slot2_enable
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  - platform: template
+    name: "⏰ Lich xa 3"
+    id: slot3_enable
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+
+  - platform: template
+    name: "⏰ Lich xa 4"
+    id: slot4_enable
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+
+# Công tắc cơ vật lý đấu chân D13 (GPIO13) và GND để kích bật/tắt BMS bằng tay
 binary_sensor:
   - platform: gpio
     pin:
-      number: GPIO25
-      mode: { input: true, pullup: true }
+      number: GPIO13
+      mode: INPUT_PULLUP
       inverted: true
-    name: "Nut Nhan Co Bat Tat BMS"
-    filters: [{ delayed_on: 50ms }]
+    name: "Cong tac co kich BMS"
+    filters:
+      - delayed_on: 50ms
     on_press:
-      then:
-        - if:
-            condition:
-              or: [{ switch.is_on: bms_charge_sw }, { switch.is_on: bms_discharge_sw }]
-            then:
-              - switch.turn_off: bms_charge_sw
-              - switch.turn_off: bms_discharge_sw
-            else:
-              - switch.turn_on: bms_charge_sw
-              - switch.turn_on: bms_discharge_sw
+      - button.press: btn_toggle_bms
 
+# Thanh trượt cài đặt dòng áp & 4 Lịch giờ/phút tùy chỉnh
 number:
   - platform: template
-    name: "CAN Charge Voltage"
-    id: can_charge_v
+    name: "⚙️ Dong Sac toi da (A)"
+    id: set_charge_current
+    min_value: 10
+    max_value: 90
+    step: 5
+    initial_value: 70
     optimistic: true
-    min_value: 25.0
-    max_value: 29.2
-    step: 0.1
-    initial_value: 28.4
     restore_value: true
-    unit_of_measurement: "V"
+    unit_of_measurement: "A"
+
   - platform: template
-    name: "CAN Discharge Voltage"
-    id: can_discharge_v
+    name: "⚙️ Dong Xa toi da (A)"
+    id: set_discharge_current
+    min_value: 10
+    max_value: 95
+    step: 5
+    initial_value: 75
     optimistic: true
-    min_value: 22.0
-    max_value: 26.5
+    restore_value: true
+    unit_of_measurement: "A"
+
+  - platform: template
+    name: "⚙️ Dien ap ngat xa (V)"
+    id: set_cutoff_volt
+    min_value: 22.4
+    max_value: 26.0
     step: 0.1
     initial_value: 25.0
-    restore_value: true
-    unit_of_measurement: "V"
-  - platform: template
-    name: "CAN Charge Current Limit"
-    id: can_charge_i
     optimistic: true
-    min_value: 0
-    max_value: 100
-    step: 1
-    initial_value: 70
     restore_value: true
-    unit_of_measurement: "A"
+    unit_of_measurement: "V"
+
+  # Lịch 1
   - platform: template
-    name: "CAN Discharge Current Limit"
-    id: can_discharge_i
-    optimistic: true
+    name: "Lich 1 - Gio Bat dau"
+    id: s1_start_h
     min_value: 0
-    max_value: 100
+    max_value: 23
     step: 1
-    initial_value: 75
+    initial_value: 16
+    optimistic: true
     restore_value: true
-    unit_of_measurement: "A"
-  - platform: modbus_controller
-    modbus_controller_id: senergy
-    name: "Senergy Export Power Limit"
-    id: senergy_export_limit
-    address: 0x0108
-    register_type: holding
-    value_type: U_WORD
+  - platform: template
+    name: "Lich 1 - Phut Bat dau"
+    id: s1_start_m
     min_value: 0
-    max_value: 4000
-    step: 10
-    unit_of_measurement: "W"
+    max_value: 55
+    step: 5
+    initial_value: 0
+    optimistic: true
+    restore_value: true
+  - platform: template
+    name: "Lich 1 - Gio Ket thuc"
+    id: s1_end_h
+    min_value: 0
+    max_value: 23
+    step: 1
+    initial_value: 7
+    optimistic: true
+    restore_value: true
+  - platform: template
+    name: "Lich 1 - Phut Ket thuc"
+    id: s1_end_m
+    min_value: 0
+    max_value: 55
+    step: 5
+    initial_value: 0
+    optimistic: true
+    restore_value: true
 
-switch:
-  - platform: jk_bms_ble
-    jk_bms_ble_id: bms0
-    charging: { name: "BMS Charging Switch", id: bms_charge_sw }
-    discharging: { name: "BMS Discharging Switch", id: bms_discharge_sw }
-    balancer: { name: "BMS Balancer Switch", id: bms_balance_sw }
-  - platform: modbus_controller
-    modbus_controller_id: senergy
-    name: "Senergy Export Enable"
-    id: senergy_export_sw
-    address: 0x0107
-    register_type: holding
-    bitmask: 1
+  # Lịch 2
+  - platform: template
+    name: "Lich 2 - Gio Bat dau"
+    id: s2_start_h
+    min_value: 0
+    max_value: 23
+    step: 1
+    initial_value: 0
+    optimistic: true
+    restore_value: true
+  - platform: template
+    name: "Lich 2 - Phut Bat dau"
+    id: s2_start_m
+    min_value: 0
+    max_value: 55
+    step: 5
+    initial_value: 0
+    optimistic: true
+    restore_value: true
+  - platform: template
+    name: "Lich 2 - Gio Ket thuc"
+    id: s2_end_h
+    min_value: 0
+    max_value: 23
+    step: 1
+    initial_value: 0
+    optimistic: true
+    restore_value: true
+  - platform: template
+    name: "Lich 2 - Phut Ket thuc"
+    id: s2_end_m
+    min_value: 0
+    max_value: 55
+    step: 5
+    initial_value: 0
+    optimistic: true
+    restore_value: true
 
-sensor:
-  - platform: jk_bms_ble
-    jk_bms_ble_id: bms0
-    total_voltage: { name: "Battery Voltage", id: total_voltage }
-    current: { name: "Battery Current", id: current }
-    power: { name: "Battery Power", id: bat_power }
-    state_of_charge: { name: "Battery SoC", id: state_of_charge }
-    capacity_remaining: { name: "Remaining Capacity", id: rem_capacity }
-    power_tube_temperature: { name: "MOS Temperature", id: mos_temp }
-    temperature_sensor_1: { name: "Battery Temp 1", id: temp_1 }
-    delta_cell_voltage: { name: "Delta Cell Voltage", id: delta_cell_v }
-    cell_voltage_1: { name: "Cell 1", id: cell_1 }
-    cell_voltage_2: { name: "Cell 2", id: cell_2 }
-    cell_voltage_3: { name: "Cell 3", id: cell_3 }
-    cell_voltage_4: { name: "Cell 4", id: cell_4 }
-    cell_voltage_5: { name: "Cell 5", id: cell_5 }
-    cell_voltage_6: { name: "Cell 6", id: cell_6 }
-    cell_voltage_7: { name: "Cell 7", id: cell_7 }
-    cell_voltage_8: { name: "Cell 8", id: cell_8 }
-  - platform: modbus_controller
-    modbus_controller_id: senergy
-    name: "PV1 Voltage"
-    id: pv1_voltage
-    address: 0x0008
-    register_type: read
-    value_type: U_WORD
-    filters: [{ multiply: 0.1 }]
-    unit_of_measurement: "V"
-  - platform: modbus_controller
-    modbus_controller_id: senergy
-    name: "PV1 Power"
-    id: pv1_power
-    address: 0x000A
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "W"
-  - platform: modbus_controller
-    modbus_controller_id: senergy
-    name: "PV2 Voltage"
-    id: pv2_voltage
-    address: 0x000B
-    register_type: read
-    value_type: U_WORD
-    filters: [{ multiply: 0.1 }]
-    unit_of_measurement: "V"
-  - platform: modbus_controller
-    modbus_controller_id: senergy
-    name: "PV2 Power"
-    id: pv2_power
-    address: 0x000D
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "W"
-  - platform: modbus_controller
-    modbus_controller_id: senergy
-    name: "Load Power"
-    id: load_power
-    address: 0x001E
-    register_type: read
-    value_type: U_WORD
-    unit_of_measurement: "W"
-  - platform: modbus_controller
-    modbus_controller_id: senergy
-    name: "Grid Voltage"
-    id: grid_voltage
-    address: 0x0012
-    register_type: read
-    value_type: U_WORD
-    filters: [{ multiply: 0.1 }]
-    unit_of_measurement: "V"
-  - platform: modbus_controller
-    modbus_controller_id: senergy
-    name: "Grid Power"
-    id: grid_power
-    address: 0x0015
-    register_type: read
-    value_type: S_WORD
-    unit_of_measurement: "W"
+  # Lịch 3
+  - platform: template
+    name: "Lich 3 - Gio Bat dau"
+    id: s3_start_h
+    min_value: 0
+    max_value: 23
+    step: 1
+    initial_value: 0
+    optimistic: true
+    restore_value: true
+  - platform: template
+    name: "Lich 3 - Phut Bat dau"
+    id: s3_start_m
+    min_value: 0
+    max_value: 55
+    step: 5
+    initial_value: 0
+    optimistic: true
+    restore_value: true
+  - platform: template
+    name: "Lich 3 - Gio Ket thuc"
+    id: s3_end_h
+    min_value: 0
+    max_value: 23
+    step: 1
+    initial_value: 0
+    optimistic: true
+    restore_value: true
+  - platform: template
+    name: "Lich 3 - Phut Ket thuc"
+    id: s3_end_m
+    min_value: 0
+    max_value: 55
+    step: 5
+    initial_value: 0
+    optimistic: true
+    restore_value: true
 
-interval:
-  - interval: 1s
-    then:
-      - canbus.send:
-          canbus_id: can_bus
-          can_id: 0x351
-          data: !lambda |-
-            uint16_t cv = (uint16_t)(id(can_charge_v).state * 10);
-            uint16_t ci = (uint16_t)(id(can_charge_i).state * 10);
-            uint16_t di = (uint16_t)(id(can_discharge_i).state * 10);
-            uint16_t dv = (uint16_t)(id(can_discharge_v).state * 10);
-            return {(uint8_t)(cv & 0xFF), (uint8_t)(cv >> 8), (uint8_t)(ci & 0xFF), (uint8_t)(ci >> 8), (uint8_t)(di & 0xFF), (uint8_t)(di >> 8), (uint8_t)(dv & 0xFF), (uint8_t)(dv >> 8)};
-      - canbus.send:
-          canbus_id: can_bus
-          can_id: 0x355
-          data: !lambda |-
-            uint16_t soc = isnan(id(state_of_charge).state) ? 50 : (uint16_t)id(state_of_charge).state;
-            return {(uint8_t)(soc & 0xFF), (uint8_t)(soc >> 8), 100, 0, 0, 0, 0, 0};
-      - canbus.send:
-          canbus_id: can_bus
-          can_id: 0x356
-          data: !lambda |-
-            int16_t v = isnan(id(total_voltage).state) ? 2640 : (int16_t)(id(total_voltage).state * 100);
-            int16_t i = isnan(id(current).state) ? 0 : (int16_t)(id(current).state * 10);
-            int16_t t = isnan(id(temp_1).state) ? 250 : (int16_t)(id(temp_1).state * 10);
-            return {(uint8_t)(v & 0xFF), (uint8_t)(v >> 8), (uint8_t)(i & 0xFF), (uint8_t)(i >> 8), (uint8_t)(t & 0xFF), (uint8_t)(t >> 8), 0, 0};
-      - canbus.send:
-          canbus_id: can_bus
-          can_id: 0x35C
-          data: !lambda |-
-            return {0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-      - canbus.send:
-          canbus_id: can_bus
-          can_id: 0x35E
-          data: !lambda |-
-            return {0x50, 0x59, 0x4C, 0x4F, 0x4E, 0x20, 0x20, 0x20};
-
-  - interval: 5s
-    then:
-      - if:
-          condition: wifi.connected
-          then:
-            - http_request.get:
-                url: !lambda |-
-                  std::string u = "http://blynk.cloud";
-                  u += "/external/api/batch/update?token=";
-                  u += "YApwHwb_atq5PAiQzC-0qHsb74EPLW6e";
-                  u += "&V0=" + str_sprintf("%d", (int)(isnan(id(state_of_charge).state) ? 0 : id(state_of_charge).state));
-                  u += "&V1=" + str_sprintf("%.2f", isnan(id(total_voltage).state) ? 0.0f : id(total_voltage).state);
-                  u += "&V2=" + str_sprintf("%.1f", isnan(id(current).state) ? 0.0f : id(current).state);
-                  u += "&V3=" + str_sprintf("%d", (int)(isnan(id(pv1_power).state) ? 0 : id(pv1_power).state));
-                  u += "&V4=" + str_sprintf("%d", (int)(isnan(id(load_power).state) ? 0 : id(load_power).state));
-                  u += "&V7=" + str_sprintf("%.1f", isnan(id(grid_voltage).state) ? 0.0f : id(grid_voltage).state);
-                  u += "&V8=" + str_sprintf("%.1f", isnan(id(mos_temp).state) ? 0.0f : id(mos_temp).state);
-                  u += "&V9=" + str_sprintf("%.1f", isnan(id(temp_1).state) ? 0.0f : id(temp_1).state);
-                  u += "&V10=" + str_sprintf("%.3f", isnan(id(delta_cell_v).state) ? 0.0f : id(delta_cell_v).state);
-                  u += "&V19=" + str_sprintf("%.1f", isnan(id(rem_capacity).state) ? 0.0f : id(rem_capacity).state);
-                  u += "&V20=" + str_sprintf("%d", (int)(isnan(id(bat_power).state) ? 0 : id(bat_power).state));
-                  u += "&V21=" + str_sprintf("%.1f", isnan(id(pv1_voltage).state) ? 0.0f : id(pv1_voltage).state);
-                  u += "&V26=" + str_sprintf("%.1f", isnan(id(pv2_voltage).state) ? 0.0f : id(pv2_voltage).state);
-                  u += "&V27=" + str_sprintf("%d", (int)(isnan(id(pv2_power).state) ? 0 : id(pv2_power).state));
-                  u += "&V28=" + str_sprintf("%d", (int)(isnan(id(grid_power).state) ? 0 : id(grid_power).state));
-                  return u;
-
-  - interval: 8s
-    then:
-      - if:
-          condition: wifi.connected
-          then:
-            - http_request.get:
-                url: !lambda |-
-                  std::string u = "http://blynk.cloud";
-                  u += "&V11=" + str_sprintf("%.3f", isnan(id(cell_1).state) ? 0.0f : id(cell_1).state);
-                  u += "&V12=" + str_sprintf("%.3f", isnan(id(cell_2).state) ? 0.0f : id(cell_2).state);
-                  u += "&V13=" + str_sprintf("%.3f", isnan(id(cell_3).state) ? 0.0f : id(cell_3).state);
-                  u += "&V14=" + str_sprintf("%.3f", isnan(id(cell_4).state) ? 0.0f : id(cell_4).state);
-                  u += "&V15=" + str_sprintf("%.3f", isnan(id(cell_5).state) ? 0.0f : id(cell_5).state);
-                  u += "&V16=" + str_sprintf("%.3f", isnan(id(cell_6).state) ? 0.0f : id(cell_6).state);
-                  u += "&V17=" + str_sprintf("%.3f", isnan(id(cell_7).state) ? 0.0f : id(cell_7).state);
-                  u += "&V18=" + str_sprintf("%.3f", isnan(id(cell_8).state) ? 0.0f : id(cell_8).state);
-                  return u;
+  # Lịch 4
+  - platform: template
+    name: "Lich 4 - Gio Bat dau"
+    id: s4_start_h
+    min_value: 0
+    max_value: 23
+    step: 1
+    initial_value: 0
+    optimistic: true
+    restore_value: true
+  - platform: template
+    name: "Lich 4 - Phut Bat dau"
+    id: s4_start_m
+    min_value: 0
+    max_value: 55
+    step: 5
+    initial_value: 0
+    optimistic: true
+    restore_value: true
+  - platform: template
+    name: "Lich 6 - Gio Ket thuc"
+    id: s4_end_h
+    min_value: 0
+    max_value: 23
+    step: 1
+    initial_value: 0
+    optimistic: true
+    restore_value: true
+  - platform: template
+    name: "Lich 4 - Phut Ket thuc"
+    id: s4_end_m
+    min_value: 0
+    max_value: 55
+    step: 5
+    initial_value: 0
