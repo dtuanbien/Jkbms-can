@@ -19,8 +19,8 @@ wifi:
   password: "76767676"
   power_save_mode: none
   manual_ip:
-    static_ip: 192.168.10.200
-    gateway: 192.168.10.1
+    static_ip: 192.168.1.200
+    gateway: 192.168.1.1
     subnet: 255.255.255.0
     dns1: 8.8.8.8
     
