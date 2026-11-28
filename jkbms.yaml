@@ -23,7 +23,9 @@ wifi:
         static_ip: 192.168.10.200
         gateway: 192.168.10.1
         subnet: 255.255.255.0
-      priority: 3
+        dns1: 8.8.8.8
+        dns2: 1.1.1.1
+        
   ap:
     ssid: "JKBMS-Senergy-Backup"
     password: "12345678"
