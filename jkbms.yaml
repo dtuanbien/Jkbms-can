@@ -18,8 +18,8 @@ wifi:
   ssid: "TUAN BIEN"
   password: "76767676"
   manual_ip:
-    static_ip: 192.168.10.200
-    gateway: 192.168.10.1
+    static_ip: 192.168.1.200
+    gateway: 192.168.1.1
     subnet: 255.255.255.0
 
 time:
@@ -91,6 +91,50 @@ interval:
                   );
                   return std::string(buf);
 
+  - interval: 1s
+    then:
+      - lambda: |-
+          uint16_t chg_v = 284;
+          uint16_t chg_i = (uint16_t)(id(set_charge_current).state * 10);
+          uint16_t dis_i = id(discharge_master).state ? (uint16_t)(id(set_discharge_current).state * 10) : 0;
+          uint16_t dis_v = (uint16_t)(id(set_cutoff_volt).state * 10);
+          std::vector<uint8_t> d351 = {
+            (uint8_t)(chg_v & 0xFF), (uint8_t)(chg_v >> 8),
+            (uint8_t)(chg_i & 0xFF), (uint8_t)(chg_i >> 8),
+            (uint8_t)(dis_i & 0xFF), (uint8_t)(dis_i >> 8),
+            (uint8_t)(dis_v & 0xFF), (uint8_t)(dis_v >> 8)
+          };
+          id(can_bus).send_data(0x351, false, d351);
+
+          uint16_t soc = isnan(id(state_of_charge).state) ? 50 : (uint16_t)id(state_of_charge).state;
+          uint16_t soh = 100;
+          std::vector<uint8_t> d355 = {
+            (uint8_t)(soc & 0xFF), (uint8_t)(soc >> 8),
+            (uint8_t)(soh & 0xFF), (uint8_t)(soh >> 8),
+            0x00, 0x00, 0x00, 0x00
+          };
+          id(can_bus).send_data(0x355, false, d355);
+
+          int16_t v_real = isnan(id(total_voltage).state) ? 2600 : (int16_t)(id(total_voltage).state * 100);
+          int16_t i_real = isnan(id(current).state) ? 0 : (int16_t)(id(current).state * 10);
+          int16_t t_real = isnan(id(mos_temp).state) ? 250 : (int16_t)(id(mos_temp).state * 10);
+          std::vector<uint8_t> d356 = {
+            (uint8_t)(v_real & 0xFF), (uint8_t)(v_real >> 8),
+            (uint8_t)(i_real & 0xFF), (uint8_t)(i_real >> 8),
+            (uint8_t)(t_real & 0xFF), (uint8_t)(t_real >> 8),
+            0x00, 0x00
+          };
+          id(can_bus).send_data(0x356, false, d356);
+
+          uint8_t flag_35c = 0x80;
+          if (id(discharge_master).state) flag_35c |= 0x40;
+          std::vector<uint8_t> d359 = {0x00, 0x00, 0x00, 0x00, 0x01, 0x50, 0x4E, 0x00};
+          std::vector<uint8_t> d35c = {flag_35c, 0x00};
+          std::vector<uint8_t> d35e = {'P', 'Y', 'L', 'O', 'N', ' ', ' ', ' '};
+          id(can_bus).send_data(0x359, false, d359);
+          id(can_bus).send_data(0x35C, false, d35c);
+          id(can_bus).send_data(0x35E, false, d35e);
+
 esp32_ble_tracker:
   scan_parameters:
     active: false
@@ -101,7 +145,6 @@ ble_client:
 
 external_components:
   - source: github://syssi/esphome-jk-bms@main
-  - source: github://syssi/esphome-jk-bms-can@main
 
 jk_bms_ble:
   - ble_client_id: client0
@@ -116,16 +159,6 @@ canbus:
     tx_pin: GPIO4
     rx_pin: GPIO5
     bit_rate: 500kbps
-
-jk_bms_can:
-  - jk_bms_ble_id: bms0
-    canbus_id: can_bus
-    protocol: PYLON
-    update_interval: 1s
-    charge_voltage: 28.4V
-    charge_current_limit: 70A
-    discharge_current_limit: 75A
-    discharge_voltage: 25.0V
 
 uart:
   id: modbus_uart
