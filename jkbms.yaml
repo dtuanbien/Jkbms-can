@@ -15,16 +15,18 @@ logger:
   level: INFO
 
 wifi:
-  networks:
-    - ssid: "TUAN BIEN"
-      password: "76767676"
-  power_seve_mode: none
-      manual_ip:
-        static_ip: 192.168.10.200
-        gateway: 192.168.10.1
-        subnet: 255.255.255.0
-        dns1: 8.8.8.8
-        
+  ssid: "TUAN BIEN"
+  password: "76767676"
+  power_save_mode: none
+  manual_ip:
+    static_ip: 192.168.10.200
+    gateway: 192.168.10.1
+    subnet: 255.255.255.0
+    dns1: 8.8.8.8
+  ap:
+    ssid: "JKBMS-Senergy-Backup"
+    password: "12345678"
+
   ap:
     ssid: "JKBMS-Senergy-Backup"
     password: "12345678"
